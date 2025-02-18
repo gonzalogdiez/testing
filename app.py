@@ -11,10 +11,15 @@ import streamlit.components.v1 as components
 # Data Loading & Preprocessing
 # ================================
 
-# Read data files
-im = pd.read_csv("raw/influencer_media.csv")
-i = pd.read_csv("raw/influencers.csv")
-ml = pd.read_csv("raw/media_likers.csv")
+# Define direct download URLs by extracting the file ID from your share links
+im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
+i_url  = "https://drive.google.com/uc?export=download&id=1Fbk6H6jqO6b3VHQ1SjLdWLEQo47JQvPu"
+ml_url = "https://drive.google.com/uc?export=download&id=1FhrqVbUc3CQeKHqbbBq2xp6o4024jm7u"
+
+# Read the CSV files from the direct download links
+im = pd.read_csv(im_url)
+i = pd.read_csv(i_url)
+ml = pd.read_csv(ml_url)
 
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
