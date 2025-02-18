@@ -6,20 +6,31 @@ import numpy as np
 from pyvis.network import Network
 import streamlit as st
 import streamlit.components.v1 as components
+import gdown
+import os
 
 # ================================
 # Data Loading & Preprocessing
 # ================================
 
-# Define direct download URLs by extracting the file ID from your share links
+# Define URLs (using the file IDs from your shared links)
 im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
 i_url  = "https://drive.google.com/uc?export=download&id=1Fbk6H6jqO6b3VHQ1SjLdWLEQo47JQvPu"
 ml_url = "https://drive.google.com/uc?export=download&id=1FhrqVbUc3CQeKHqbbBq2xp6o4024jm7u"
 
-# Read the CSV files from the direct download links
-im = pd.read_csv(im_url)
-i = pd.read_csv(i_url)
-ml = pd.read_csv(ml_url)
+# Optionally, check if the file exists locally before downloading.
+if not os.path.exists("raw/influencer_media.csv"):
+    gdown.download(im_url, "raw/influencer_media.csv", quiet=False)
+if not os.path.exists("raw/influencers.csv"):
+    gdown.download(i_url, "raw/influencers.csv", quiet=False)
+if not os.path.exists("raw/media_likers.csv"):
+    gdown.download(ml_url, "raw/media_likers.csv", quiet=False)
+
+# Now load the CSVs from the local paths
+im = pd.read_csv("raw/influencer_media.csv")
+i = pd.read_csv("raw/influencers.csv")
+ml = pd.read_csv("raw/media_likers.csv")
+
 
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
