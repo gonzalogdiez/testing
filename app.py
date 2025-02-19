@@ -31,8 +31,9 @@ if not os.path.exists("raw/media_likers.csv"):
 im = pd.read_csv("raw/influencer_media.csv")
 i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
-
-
+ml = ml[['pk', 'username', 'media_id']]
+im = [['taken_at', 'pk', 'id', 'media_type', 'code', 'caption', 'user', 'preview_comments', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'can_viewer_save', 'can_viewer_reshare', 'reshare_count', 'usertags', 'taken_at_ts', 'sponsor_tags', 'play_count', 'user_id', 'fb_like_count', 'view_count', 'owner', 'title', 'save_count', 'is_unified_video', 'commerciality_status', 'has_more_comments', 'max_num_visible_preview_comments', 'explore_hide_comments', 'caption_add_on', 'preview', 'media_overlay_info', 'media_note_mimicry', 'clips_text', 'thumbnails', 'cutout_stickers', 'visual_replies_info', 'visual_comment_reply_sticker_info', 'upcoming_event']]
+i = [['pk', 'id', 'media_type', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count', 'owner', 'title', 'save_count']]
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
 print(f"Maximum follower count: {max_follower_count}")
@@ -241,7 +242,7 @@ def run_analysis(ml_with_username, im_with_username):
 
 # Run the analysis and store output in 'results'
 results = run_analysis(ml_with_username, im_with_username)
-
+'''
 # ================================
 # Create PyVis Network for Dashboard
 # ================================
@@ -326,7 +327,7 @@ for idx, row in audience_groups.iterrows():
 
 # Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
 graph_html = net.generate_html(notebook=True)
-
+'''
 # ================================
 # Streamlit Dashboard
 # ================================
@@ -362,6 +363,7 @@ st.write(f"Core audience (freq>=3) is **{results['core_freq_percentage']:.2f}%**
 st.header("Natural Audience Clusters")
 st.write(f"Number of natural audience clusters: **{results['num_clusters']}**")
 st.dataframe(results["audience_groups"])
-
+'''
 st.header("Interactive PyVis Graph")
 components.html(graph_html, height=800, scrolling=False)
+'''
