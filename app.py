@@ -33,7 +33,6 @@ i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
 
 ml = ml[['pk', 'username', 'media_id']]
-i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
 
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
