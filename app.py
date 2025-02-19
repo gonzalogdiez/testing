@@ -49,16 +49,18 @@ def load_data():
     total_follower_count = i['follower_count'].sum()
     print(f"Total follower count: {total_follower_count}")
 
+    # -------------------------------
     # Utility: Add influencerusername to im
+    # -------------------------------
     def add_influencer_username(im, i):
-        im_with_username = im.merge(i[['pk', 'username']],
+        im_with_username = im.merge(i[['pk', 'username']], 
                                     left_on='user_id', right_on='pk', how='left')
         im_with_username.rename(columns={'username': 'influencerusername'}, inplace=True)
         return im_with_username
-
+    
     im_with_username = add_influencer_username(im, i)
-    ml_with_username = ml.merge(im_with_username[['pk', 'user_id', 'influencerusername']],
-                                left_on='media_id', right_on='pk', how='left')
+    ml_with_username = ml.merge(im_with_username[['pk_x', 'user_id', 'influencerusername']],
+                                left_on='media_id', right_on='pk_x', how='left')
     return ml, im, i, ml_with_username
 
 @st.cache(allow_output_mutation=True)
