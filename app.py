@@ -50,6 +50,7 @@ print(f"Username with the maximum follower count: {username_max_follower}")
 total_follower_count = i['follower_count'].sum()
 print(f"Total follower count: {total_follower_count}")
 
+
 # -------------------------------
 # Utility: Add influencerusername to im
 # -------------------------------
@@ -60,8 +61,8 @@ def add_influencer_username(im, i):
     return im_with_username
 
 im_with_username = add_influencer_username(im, i)
-ml_with_username = ml.merge(im_with_username[['pk', 'user_id', 'influencerusername']],
-                            left_on='media_id', right_on='pk', how='left')
+ml_with_username = ml.merge(im_with_username[['pk_x', 'user_id', 'influencerusername']],
+                            left_on='media_id', right_on='pk_x', how='left')
 
 # -------------------------------
 # (Optional) Plot a histogram of unique influencer interactions per user
