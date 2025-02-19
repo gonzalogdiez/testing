@@ -1,13 +1,10 @@
 import math
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
-from pyvis.network import Network
 import streamlit as st
-import streamlit.components.v1 as components
 import gdown
-import os
 
 # ================================
 # Data Loading & Preprocessing
@@ -19,7 +16,7 @@ im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtd
 i_url  = "https://drive.google.com/uc?export=download&id=1Fbk6H6jqO6b3VHQ1SjLdWLEQo47JQvPu"
 ml_url = "https://drive.google.com/uc?export=download&id=1FhrqVbUc3CQeKHqbbBq2xp6o4024jm7u"
 
-# Optionally, check if the file exists locally before downloading.
+# Download files if they don't exist locally
 if not os.path.exists("raw/influencer_media.csv"):
     gdown.download(im_url, "raw/influencer_media.csv", quiet=False)
 if not os.path.exists("raw/influencers.csv"):
@@ -32,10 +29,11 @@ im = pd.read_csv("raw/influencer_media.csv")
 i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
 
-
 # Subset the DataFrames to only include the necessary columns
 ml = ml[['pk', 'username', 'media_id']]
-im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count']]
+im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 
+         'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 
+         'user_id', 'fb_like_count', 'view_count']]
 i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
 
 # (At this point your data is loaded in the DataFrames, so you can delete the CSV files if desired.)
@@ -52,29 +50,31 @@ print(f"Username with the maximum follower count: {username_max_follower}")
 total_follower_count = i['follower_count'].sum()
 print(f"Total follower count: {total_follower_count}")
 
-# Function to add influencerusername to im
+# -------------------------------
+# Utility: Add influencerusername to im
+# -------------------------------
 def add_influencer_username(im, i):
-    im_with_username = im.merge(i[['pk', 'username']], left_on='user_id', right_on='pk', how='left')
+    im_with_username = im.merge(i[['pk', 'username']], 
+                                left_on='user_id', right_on='pk', how='left')
     im_with_username.rename(columns={'username': 'influencerusername'}, inplace=True)
     return im_with_username
 
 im_with_username = add_influencer_username(im, i)
-ml_with_username = ml.merge(im_with_username[['pk_x','user_id', 'influencerusername']], 
-                            left_on='media_id', right_on='pk_x', how='left')
+ml_with_username = ml.merge(im_with_username[['pk', 'user_id', 'influencerusername']],
+                            left_on='media_id', right_on='pk', how='left')
 
-# ================================
-# Utility Function for Histogram (Optional)
-# ================================
+# -------------------------------
+# (Optional) Plot a histogram of unique influencer interactions per user
+# -------------------------------
 def count_user_interactions_per_influencer(ml_with_username):
     user_interaction_counts = (
         ml_with_username.groupby('username')['influencerusername']
         .nunique()
         .reset_index()
-        .rename(columns={'username': 'username', 'influencerusername': 'unique_influencers_count'})
+        .rename(columns={'influencerusername': 'unique_influencers_count'})
     )
     return user_interaction_counts
 
-# Optional: Plot a histogram (this will open in an external window)
 s_hist = count_user_interactions_per_influencer(ml_with_username)
 plt.figure(figsize=(10, 6))
 plt.hist(s_hist['unique_influencers_count'], bins=range(1, 91), edgecolor='black', alpha=0.7)
@@ -85,9 +85,9 @@ plt.xticks(range(1, 91, 5))
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.show()
 
-# ================================
+# -------------------------------
 # Create Sampled Pairs for Audience Grouping
-# ================================
+# -------------------------------
 def sample_connections(df):
     """
     For a given influencer's connections, sample 3% (rounded down) but at least 5 rows.
@@ -99,19 +99,19 @@ def sample_connections(df):
 
 sampled_pairs = ml_with_username.groupby('influencerusername').apply(sample_connections).reset_index(drop=True)
 
-# ================================
+# -------------------------------
 # Analysis Function: run_analysis()
-# ================================
-def run_analysis(ml_with_username, im_with_username):
+# -------------------------------
+def run_analysis(ml_with_username, im_with_username, core_threshold=2):
     results = {}
     
     # Q1: Total Unique Audience
     total_unique_audience = ml_with_username['username'].nunique()
     results["total_unique_audience"] = total_unique_audience
 
-    # Q2 & Q3: Define CORE users (>=2 distinct influencers)
+    # Q2 & Q3: Define CORE users (>= core_threshold distinct influencers)
     user_influencer_counts = ml_with_username.groupby('username')['influencerusername'].nunique()
-    core_users = user_influencer_counts[user_influencer_counts >= 2]
+    core_users = user_influencer_counts[user_influencer_counts >= core_threshold]
     total_core_users = core_users.count()
     results["total_core_users"] = total_core_users
 
@@ -228,125 +228,94 @@ def run_analysis(ml_with_username, im_with_username):
         current_union |= audience
     results["marginal_gains"] = marginal_gains
 
-    # Q10: Frequency analysis for >=3 engagements
+    # Q10: Frequency analysis for >=3 engagements (using the same core_threshold)
     engagement_counts = ml_with_username.groupby(['username', 'influencerusername']).size().reset_index(name='count')
     freq_df = engagement_counts[engagement_counts['count'] >= 3]
     total_unique_freq = freq_df['username'].nunique()
     results["total_unique_freq"] = total_unique_freq
     user_freq_influencer = freq_df.groupby('username')['influencerusername'].nunique()
-    core_freq = user_freq_influencer[user_freq_influencer >= 2]
+    core_freq = user_freq_influencer[user_freq_influencer >= core_threshold]
     total_core_freq = core_freq.count()
     results["total_core_freq"] = total_core_freq
     core_freq_percentage = (total_core_freq / total_unique_freq) * 100 if total_unique_freq > 0 else 0
     results["core_freq_percentage"] = core_freq_percentage
 
     # Q11: Natural audience clusters (by exact set of influencers engaged, using the sample)
-    audience_behavior = sampled_pairs.groupby('username')['influencerusername'].apply(lambda x: frozenset(x)).reset_index(name='influencers_set')
-    audience_groups = audience_behavior.groupby('influencers_set')['username'].apply(list).reset_index(name='audience_list')
+    audience_behavior = sampled_pairs.groupby('username')['influencerusername'] \
+                                     .apply(lambda x: frozenset(x)) \
+                                     .reset_index(name='influencers_set')
+    audience_groups = audience_behavior.groupby('influencers_set')['username'] \
+                                       .apply(list) \
+                                       .reset_index(name='audience_list')
     audience_groups['group_id'] = audience_groups.index.map(lambda i: f"Group_{i}")
     results["audience_groups"] = audience_groups
     results["num_clusters"] = audience_groups.shape[0]
 
     return results
 
-# Run the analysis and store output in 'results'
-results = run_analysis(ml_with_username, im_with_username)
-'''
-# ================================
-# Create PyVis Network for Dashboard
-# ================================
-# (This is separate from the analysis; we embed this graph in the dashboard.)
-net = Network(height="800px", width="100%", bgcolor="#ffffff", font_color="black", notebook=True)
-net.barnes_hut(gravity=-20000, central_gravity=0.3, spring_length=250, spring_strength=0.001)
+# -------------------------------
+# Helper: Compute Coverage for Core Audience (Greedy Algorithm)
+# -------------------------------
+def compute_coverage(target_percentage, total_core_users, influencer_to_core):
+    """
+    Given a target percentage of core users to cover, use a greedy algorithm to choose influencers.
+    """
+    target = int((target_percentage / 100.0) * total_core_users)
+    selected = set()
+    chosen_influencers = []
+    remaining = influencer_to_core.copy()
+    while len(selected) < target and remaining:
+        best = None
+        best_new = 0
+        for influencer, audience in remaining.items():
+            new_users = audience - selected
+            if len(new_users) > best_new:
+                best_new = len(new_users)
+                best = influencer
+        if best is None:
+            break
+        chosen_influencers.append(best)
+        selected |= remaining[best]
+        del remaining[best]
+    return chosen_influencers, len(selected)
 
-# Use the previously computed top influencers and influencer_reach
-influencer_reach = ml_with_username.groupby('influencerusername')['username'].nunique()
-total_audience = len(set(ml_with_username['username']))
-influencer_reach_sorted = influencer_reach.sort_values(ascending=False)
-top_influencers = influencer_reach_sorted.head(5).index.tolist()
-
-# Create influencer nodes with a square-root scaling and profile images for top influencers.
-base_influencer_size = 20
-scaling_factor_influencer = 2
-sampled_influencer_nodes = sampled_pairs['influencerusername'].unique()
-for influencer in sampled_influencer_nodes:
-    reach = influencer_reach.get(influencer, 0)
-    node_size = base_influencer_size + scaling_factor_influencer * math.sqrt(reach)
-    pct = (reach / total_audience) * 100
-    label_text = f"{influencer}\n{pct:.2f}%"
-    title_text = f"Influencer: {influencer}\nReach: {reach} ({pct:.2f}%)"
-    if influencer in top_influencers:
-        node_color = "red"
-        net.add_node(
-            influencer,
-            label=label_text,
-            title=title_text,
-            color=node_color,
-            size=node_size,
-            shape="circularImage",
-            image=f"{influencer}.jpg"
-        )
-    else:
-        node_color = "gray"
-        net.add_node(
-            influencer,
-            label=label_text,
-            title=title_text,
-            color=node_color,
-            size=node_size
-        )
-
-# Group Audience Nodes by Behavior (using sampled_pairs)
-audience_behavior = sampled_pairs.groupby('username')['influencerusername'].apply(lambda x: frozenset(x)).reset_index(name='influencers_set')
-audience_groups = audience_behavior.groupby('influencers_set')['username'].apply(list).reset_index(name='audience_list')
-audience_groups['group_id'] = audience_groups.index.map(lambda i: f"Group_{i}")
-# Convert frozenset to string for display
-audience_groups['influencers_set'] = audience_groups['influencers_set'].apply(lambda x: ", ".join(sorted(list(x))) if isinstance(x, (set, frozenset)) else x)
-
-for idx, row in audience_groups.iterrows():
-    group_id = row['group_id']
-    influencers_set = row['influencers_set']
-    audience_list = row['audience_list']
-    group_size = len(audience_list)
-    node_size = 5 + 10 * math.log(group_size + 1)
-    title_text = f"Audience Group (Size: {group_size})\nInfluencers: {influencers_set}"
-    net.add_node(
-        group_id,
-        label=str(group_size),
-        title=title_text,
-        color="lightblue",
-        size=node_size
-    )
-
-# Add edges from audience groups to influencers
-base_edge_thickness = 1
-scaling_edge = 1
-for idx, row in audience_groups.iterrows():
-    group_id = row['group_id']
-    group_size = len(row['audience_list'])
-    edge_thickness = base_edge_thickness + scaling_edge * math.log(group_size + 1)
-    influencers_str = row['influencers_set']
-    influencers_set = set(influencers_str.split(", ")) if influencers_str != "" else set()
-    for influencer in influencers_set:
-        if influencer in top_influencers:
-            edge_color = "rgba(255,0,0,0.5)"
-        else:
-            edge_color = "rgba(128,128,128,0.5)"
-        net.add_edge(group_id, influencer, color=edge_color, width=edge_thickness)
-
-# Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
-graph_html = net.generate_html(notebook=True)
-'''
 # ================================
 # Streamlit Dashboard
 # ================================
 st.title("Influencer Analysis Dashboard")
+
+# Slicer for Core Audience Threshold (minimum connections to be considered core)
+core_threshold = st.slider(
+    "Minimum distinct influencer connections for a user to be considered core:",
+    min_value=2,
+    max_value=10,
+    value=2
+)
+
+# Run analysis using the selected core threshold
+results = run_analysis(ml_with_username, im_with_username, core_threshold=core_threshold)
+
+# Slicer for Target Coverage Percentage of Core Audience
+target_coverage = st.slider(
+    "Select target core audience coverage percentage:",
+    min_value=10,
+    max_value=100,
+    step=5,
+    value=50
+)
+# Compute custom coverage using the helper function
+selected_custom, covered_custom = compute_coverage(
+    target_coverage, results["total_core_users"], results["influencer_to_core"]
+)
 
 st.header("Overview Metrics")
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Unique Audience", results["total_unique_audience"])
 col2.metric("Total CORE Users", results["total_core_users"])
 col3.metric("Core Audience %", f"{results['core_percentage']:.2f}%")
+
+st.header("Custom Coverage Analysis")
+st.write(f"To cover **{target_coverage}%** of the core audience, **{len(selected_custom)}** influencers are required, covering **{covered_custom}** core users.")
 
 st.header("Coverage Metrics")
 st.write(f"To cover 50% of the core audience: **{results['selected_50_count']}** influencers (covering **{results['covered_50']}** core users).")
@@ -366,13 +335,9 @@ st.dataframe(results["df_influencers"])
 
 st.header("Frequency Analysis (>=3 engagements)")
 st.write(f"Total unique audience with frequency >= 3 per influencer: **{results['total_unique_freq']}**")
-st.write(f"CORE unique users (freq>=3 with at least 2 influencers): **{results['total_core_freq']}**")
+st.write(f"CORE unique users (freq>=3 with at least {core_threshold} influencers): **{results['total_core_freq']}**")
 st.write(f"Core audience (freq>=3) is **{results['core_freq_percentage']:.2f}%** of the total audience with freq>=3.")
 
 st.header("Natural Audience Clusters")
 st.write(f"Number of natural audience clusters: **{results['num_clusters']}**")
 st.dataframe(results["audience_groups"])
-'''
-st.header("Interactive PyVis Graph")
-components.html(graph_html, height=800, scrolling=False)
-'''
