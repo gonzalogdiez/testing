@@ -9,7 +9,7 @@ import gdown
 # ================================
 # Data Loading & Preprocessing (Cached)
 # ================================
-@st.experimental_memo
+@st.cache(allow_output_mutation=True)
 def load_data():
     os.makedirs("raw", exist_ok=True)
     im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
@@ -61,8 +61,7 @@ def load_data():
                                 left_on='media_id', right_on='pk', how='left')
     return ml, im, i, ml_with_username
 
-# Cached sample pairs for audience grouping
-@st.experimental_memo
+@st.cache(allow_output_mutation=True)
 def compute_sampled_pairs(ml_with_username):
     def sample_connections(df):
         n = len(df)
@@ -240,7 +239,7 @@ def run_analysis(ml_with_username, im_with_username, core_threshold=2):
     results["core_freq_percentage"] = core_freq_percentage
 
     # Q11: Natural audience clusters (by exact set of influencers engaged, using the sample)
-    # Convert the set into a sorted comma-separated string for display
+    # Convert set into a sorted comma-separated string for Arrow compatibility
     audience_behavior = sampled_pairs.groupby('username')['influencerusername'] \
                                      .apply(lambda x: ", ".join(sorted(set(x)))) \
                                      .reset_index(name='influencers_set')
@@ -254,7 +253,7 @@ def run_analysis(ml_with_username, im_with_username, core_threshold=2):
     return results
 
 # -------------------------------
-# Helper: Compute Coverage for Core Audience (Greedy Algorithm)
+# Helper: Compute Custom Coverage (Greedy Algorithm)
 # -------------------------------
 def compute_coverage(target_percentage, total_core_users, influencer_to_core):
     target = int((target_percentage / 100.0) * total_core_users)
