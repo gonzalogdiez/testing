@@ -9,7 +9,7 @@ import gdown
 # ================================
 # Data Loading & Preprocessing (Cached)
 # ================================
-@st.cache(allow_output_mutation=True)
+@st.cache_data
 def load_data():
     os.makedirs("raw", exist_ok=True)
     im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
@@ -63,7 +63,7 @@ def load_data():
                                 left_on='media_id', right_on='pk_x', how='left')
     return ml, im, i, ml_with_username
 
-@st.cache(allow_output_mutation=True)
+@st.cache_data
 def compute_sampled_pairs(ml_with_username):
     def sample_connections(df):
         n = len(df)
@@ -188,154 +188,3 @@ def run_analysis(ml_with_username, im_with_username, core_threshold=2):
     results["df_influencers"] = df_influencers
 
     # Greedy algorithm for cheapest mix using estimated cost.
-    def greedy_cheapest_influencers(target_percentage, inf_to_core, inf_cost):
-        target = int((target_percentage / 100.0) * total_core_users)
-        selected = set()
-        chosen = []
-        remaining = inf_to_core.copy()
-        while len(selected) < target and remaining:
-            best = None
-            best_ratio = float('inf')
-            for influencer, audience in remaining.items():
-                new_users = audience - selected
-                if len(new_users) > 0:
-                    ratio = inf_cost[influencer] / len(new_users)
-                    if ratio < best_ratio:
-                        best_ratio = ratio
-                        best = influencer
-            if best is None:
-                break
-            chosen.append(best)
-            selected |= influencer_to_core[best]
-            del remaining[best]
-        total_cost = sum(inf_cost[inf] for inf in chosen)
-        return chosen, len(selected), total_cost
-    
-    cheapest_50, covered_50_cost, cost_50 = greedy_cheapest_influencers(50, influencer_to_core, influencer_cost)
-    cheapest_100, covered_100_cost, cost_100 = greedy_cheapest_influencers(100, influencer_to_core, influencer_cost)
-    results["cheapest_50_count"] = len(cheapest_50)
-    results["cheapest_50_cost"] = cost_50
-    results["cheapest_100_count"] = len(cheapest_100)
-    results["cheapest_100_cost"] = cost_100
-
-    # Q8: Marginal gains
-    sorted_influencers = sorted(influencer_to_core.items(), key=lambda x: len(x[1]), reverse=True)
-    marginal_gains = []
-    current_union = set()
-    for influencer, audience in sorted_influencers:
-        new_gain = len(audience - current_union)
-        marginal_gains.append((influencer, new_gain))
-        current_union |= audience
-    results["marginal_gains"] = marginal_gains
-
-    # Q10: Frequency analysis for >=3 engagements (using the same core_threshold)
-    engagement_counts = ml_with_username.groupby(['username', 'influencerusername']).size().reset_index(name='count')
-    freq_df = engagement_counts[engagement_counts['count'] >= 3]
-    total_unique_freq = freq_df['username'].nunique()
-    results["total_unique_freq"] = total_unique_freq
-    user_freq_influencer = freq_df.groupby('username')['influencerusername'].nunique()
-    core_freq = user_freq_influencer[user_freq_influencer >= core_threshold]
-    total_core_freq = core_freq.count()
-    results["total_core_freq"] = total_core_freq
-    core_freq_percentage = (total_core_freq / total_unique_freq) * 100 if total_unique_freq > 0 else 0
-    results["core_freq_percentage"] = core_freq_percentage
-
-    # Q11: Natural audience clusters (by exact set of influencers engaged, using the sample)
-    # Convert set into a sorted comma-separated string for Arrow compatibility
-    audience_behavior = sampled_pairs.groupby('username')['influencerusername'] \
-                                     .apply(lambda x: ", ".join(sorted(set(x)))) \
-                                     .reset_index(name='influencers_set')
-    audience_groups = audience_behavior.groupby('influencers_set')['username'] \
-                                       .apply(list) \
-                                       .reset_index(name='audience_list')
-    audience_groups['group_id'] = audience_groups.index.map(lambda i: f"Group_{i}")
-    results["audience_groups"] = audience_groups
-    results["num_clusters"] = audience_groups.shape[0]
-
-    return results
-
-# -------------------------------
-# Helper: Compute Custom Coverage (Greedy Algorithm)
-# -------------------------------
-def compute_coverage(target_percentage, total_core_users, influencer_to_core):
-    target = int((target_percentage / 100.0) * total_core_users)
-    selected = set()
-    chosen_influencers = []
-    remaining = influencer_to_core.copy()
-    while len(selected) < target and remaining:
-        best = None
-        best_new = 0
-        for influencer, audience in remaining.items():
-            new_users = audience - selected
-            if len(new_users) > best_new:
-                best_new = len(new_users)
-                best = influencer
-        if best is None:
-            break
-        chosen_influencers.append(best)
-        selected |= remaining[best]
-        del remaining[best]
-    return chosen_influencers, len(selected)
-
-# ================================
-# Streamlit Dashboard
-# ================================
-st.title("Influencer Analysis Dashboard")
-
-# Slicer for Core Audience Threshold (minimum distinct influencer connections)
-core_threshold = st.slider(
-    "Minimum distinct influencer connections for a user to be considered core:",
-    min_value=2,
-    max_value=10,
-    value=2
-)
-
-# Run analysis using the selected core threshold
-results = run_analysis(ml_with_username, im_with_username, core_threshold=core_threshold)
-
-# Slicer for Target Coverage Percentage of Core Audience
-target_coverage = st.slider(
-    "Select target core audience coverage percentage:",
-    min_value=10,
-    max_value=100,
-    step=5,
-    value=50
-)
-selected_custom, covered_custom = compute_coverage(
-    target_coverage, results["total_core_users"], results["influencer_to_core"]
-)
-
-st.header("Overview Metrics")
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Unique Audience", results["total_unique_audience"])
-col2.metric("Total CORE Users", results["total_core_users"])
-col3.metric("Core Audience %", f"{results['core_percentage']:.2f}%")
-
-st.header("Custom Coverage Analysis")
-st.write(f"To cover **{target_coverage}%** of the core audience, **{len(selected_custom)}** influencers are required, covering **{covered_custom}** core users.")
-
-st.header("Coverage Metrics")
-st.write(f"To cover 50% of the core audience: **{results['selected_50_count']}** influencers (covering **{results['covered_50']}** core users).")
-st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}** influencers (covering **{results['covered_100']}** core users).")
-
-st.header("Cost Estimation")
-# Display the inverse of the median ratio: like_count/view_count
-st.write(f"Median ratio (like_count/view_count): **{(1/results['median_ratio']):.2%}**")
-st.write(f"Cheapest mix to cover 50% of core audience: **{results['cheapest_50_count']}** influencers with total cost **${results['cheapest_50_cost']:.2f}**.")
-st.write(f"Cheapest mix to cover 100% of core audience: **{results['cheapest_100_count']}** influencers with total cost **${results['cheapest_100_cost']:.2f}**.")
-
-st.header("Marginal Gains")
-mg_df = pd.DataFrame(results["marginal_gains"], columns=["Influencer", "New Core Users Added"])
-st.dataframe(mg_df)
-
-st.header("Influencer Summary")
-st.dataframe(results["df_influencers"])
-
-st.header("Frequency Analysis (>=3 engagements)")
-st.write(f"Total unique audience with frequency >= 3 per influencer: **{results['total_unique_freq']}**")
-st.write(f"CORE unique users (freq>=3 with at least {core_threshold} influencers): **{results['total_core_freq']}**")
-st.write(f"Core audience (freq>=3) is **{results['core_freq_percentage']:.2f}%** of the total audience with freq>=3.")
-
-st.header("Natural Audience Clusters")
-st.write(f"Number of natural audience clusters: **{results['num_clusters']}**")
-st.dataframe(results["audience_groups"])
