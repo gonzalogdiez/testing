@@ -31,9 +31,11 @@ if not os.path.exists("raw/media_likers.csv"):
 im = pd.read_csv("raw/influencer_media.csv")
 i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
+
 ml = ml[['pk', 'username', 'media_id']]
-im = [['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count']]
-i = [['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
+im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count']]
+i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
+
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
 print(f"Maximum follower count: {max_follower_count}")
