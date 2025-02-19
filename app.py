@@ -32,6 +32,17 @@ im = pd.read_csv("raw/influencer_media.csv")
 i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
 
+
+# Subset the DataFrames to only include the necessary columns
+ml = ml[['pk', 'username', 'media_id']]
+im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count']]
+i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
+
+# (At this point your data is loaded in the DataFrames, so you can delete the CSV files if desired.)
+os.remove("raw/influencer_media.csv")
+os.remove("raw/influencers.csv")
+os.remove("raw/media_likers.csv")
+
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
 print(f"Maximum follower count: {max_follower_count}")
