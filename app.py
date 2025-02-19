@@ -7,65 +7,77 @@ import streamlit as st
 import gdown
 
 # ================================
-# Data Loading & Preprocessing
+# Data Loading & Preprocessing (Cached)
 # ================================
+@st.experimental_memo
+def load_data():
+    os.makedirs("raw", exist_ok=True)
+    im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
+    i_url  = "https://drive.google.com/uc?export=download&id=1Fbk6H6jqO6b3VHQ1SjLdWLEQo47JQvPu"
+    ml_url = "https://drive.google.com/uc?export=download&id=1FhrqVbUc3CQeKHqbbBq2xp6o4024jm7u"
 
-# Define URLs (using the file IDs from your shared links)
-os.makedirs("raw", exist_ok=True)
-im_url = "https://drive.google.com/uc?export=download&id=1F9Wfb-six5W4ZvkwYRVOtdTzZ8CVkYUc"
-i_url  = "https://drive.google.com/uc?export=download&id=1Fbk6H6jqO6b3VHQ1SjLdWLEQo47JQvPu"
-ml_url = "https://drive.google.com/uc?export=download&id=1FhrqVbUc3CQeKHqbbBq2xp6o4024jm7u"
+    # Download files if they don't exist locally
+    if not os.path.exists("raw/influencer_media.csv"):
+        gdown.download(im_url, "raw/influencer_media.csv", quiet=False)
+    if not os.path.exists("raw/influencers.csv"):
+        gdown.download(i_url, "raw/influencers.csv", quiet=False)
+    if not os.path.exists("raw/media_likers.csv"):
+        gdown.download(ml_url, "raw/media_likers.csv", quiet=False)
 
-# Download files if they don't exist locally
-if not os.path.exists("raw/influencer_media.csv"):
-    gdown.download(im_url, "raw/influencer_media.csv", quiet=False)
-if not os.path.exists("raw/influencers.csv"):
-    gdown.download(i_url, "raw/influencers.csv", quiet=False)
-if not os.path.exists("raw/media_likers.csv"):
-    gdown.download(ml_url, "raw/media_likers.csv", quiet=False)
+    # Load CSVs
+    im = pd.read_csv("raw/influencer_media.csv")
+    i = pd.read_csv("raw/influencers.csv")
+    ml = pd.read_csv("raw/media_likers.csv")
 
-# Now load the CSVs from the local paths
-im = pd.read_csv("raw/influencer_media.csv")
-i = pd.read_csv("raw/influencers.csv")
-ml = pd.read_csv("raw/media_likers.csv")
+    # Subset the DataFrames to only include necessary columns
+    ml = ml[['pk', 'username', 'media_id']]
+    im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked',
+             'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count',
+             'user_id', 'fb_like_count', 'view_count']]
+    i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
 
-# Subset the DataFrames to only include the necessary columns
-ml = ml[['pk', 'username', 'media_id']]
-im = im[['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 
-         'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 
-         'user_id', 'fb_like_count', 'view_count']]
-i = i[['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
+    # Delete CSV files to free disk space
+    os.remove("raw/influencer_media.csv")
+    os.remove("raw/influencers.csv")
+    os.remove("raw/media_likers.csv")
 
-# (At this point your data is loaded in the DataFrames, so you can delete the CSV files if desired.)
-os.remove("raw/influencer_media.csv")
-os.remove("raw/influencers.csv")
-os.remove("raw/media_likers.csv")
+    # Print some basic info (to console)
+    max_follower_count = i['follower_count'].max()
+    print(f"Maximum follower count: {max_follower_count}")
+    max_follower_row = i.loc[i['follower_count'].idxmax()]
+    print(f"Username with the maximum follower count: {max_follower_row['username']}")
+    total_follower_count = i['follower_count'].sum()
+    print(f"Total follower count: {total_follower_count}")
 
-# Print some basic info (to console)
-max_follower_count = i['follower_count'].max()
-print(f"Maximum follower count: {max_follower_count}")
-max_follower_row = i.loc[i['follower_count'].idxmax()]
-username_max_follower = max_follower_row['username']
-print(f"Username with the maximum follower count: {username_max_follower}")
-total_follower_count = i['follower_count'].sum()
-print(f"Total follower count: {total_follower_count}")
+    # Utility: Add influencerusername to im
+    def add_influencer_username(im, i):
+        im_with_username = im.merge(i[['pk', 'username']],
+                                    left_on='user_id', right_on='pk', how='left')
+        im_with_username.rename(columns={'username': 'influencerusername'}, inplace=True)
+        return im_with_username
 
+    im_with_username = add_influencer_username(im, i)
+    ml_with_username = ml.merge(im_with_username[['pk', 'user_id', 'influencerusername']],
+                                left_on='media_id', right_on='pk', how='left')
+    return ml, im, i, ml_with_username
+
+# Cached sample pairs for audience grouping
+@st.experimental_memo
+def compute_sampled_pairs(ml_with_username):
+    def sample_connections(df):
+        n = len(df)
+        sample_size = max(int(0.03 * n), 5)
+        sample_size = min(sample_size, n)
+        return df.sample(n=sample_size, random_state=42)
+    sampled_pairs = ml_with_username.groupby('influencerusername').apply(sample_connections).reset_index(drop=True)
+    return sampled_pairs
+
+# Load data only once
+ml, im, i, ml_with_username = load_data()
+sampled_pairs = compute_sampled_pairs(ml_with_username)
 
 # -------------------------------
-# Utility: Add influencerusername to im
-# -------------------------------
-def add_influencer_username(im, i):
-    im_with_username = im.merge(i[['pk', 'username']], 
-                                left_on='user_id', right_on='pk', how='left')
-    im_with_username.rename(columns={'username': 'influencerusername'}, inplace=True)
-    return im_with_username
-
-im_with_username = add_influencer_username(im, i)
-ml_with_username = ml.merge(im_with_username[['pk_x', 'user_id', 'influencerusername']],
-                            left_on='media_id', right_on='pk_x', how='left')
-
-# -------------------------------
-# (Optional) Plot a histogram of unique influencer interactions per user
+# (Optional) Plot histogram of unique influencer interactions per user
 # -------------------------------
 def count_user_interactions_per_influencer(ml_with_username):
     user_interaction_counts = (
@@ -85,20 +97,6 @@ plt.ylabel('Number of Users', fontsize=14)
 plt.xticks(range(1, 91, 5))
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.show()
-
-# -------------------------------
-# Create Sampled Pairs for Audience Grouping
-# -------------------------------
-def sample_connections(df):
-    """
-    For a given influencer's connections, sample 3% (rounded down) but at least 5 rows.
-    """
-    n = len(df)
-    sample_size = max(int(0.03 * n), 5)
-    sample_size = min(sample_size, n)
-    return df.sample(n=sample_size, random_state=42)
-
-sampled_pairs = ml_with_username.groupby('influencerusername').apply(sample_connections).reset_index(drop=True)
 
 # -------------------------------
 # Analysis Function: run_analysis()
@@ -242,8 +240,9 @@ def run_analysis(ml_with_username, im_with_username, core_threshold=2):
     results["core_freq_percentage"] = core_freq_percentage
 
     # Q11: Natural audience clusters (by exact set of influencers engaged, using the sample)
+    # Convert the set into a sorted comma-separated string for display
     audience_behavior = sampled_pairs.groupby('username')['influencerusername'] \
-                                     .apply(lambda x: frozenset(x)) \
+                                     .apply(lambda x: ", ".join(sorted(set(x)))) \
                                      .reset_index(name='influencers_set')
     audience_groups = audience_behavior.groupby('influencers_set')['username'] \
                                        .apply(list) \
@@ -258,9 +257,6 @@ def run_analysis(ml_with_username, im_with_username, core_threshold=2):
 # Helper: Compute Coverage for Core Audience (Greedy Algorithm)
 # -------------------------------
 def compute_coverage(target_percentage, total_core_users, influencer_to_core):
-    """
-    Given a target percentage of core users to cover, use a greedy algorithm to choose influencers.
-    """
     target = int((target_percentage / 100.0) * total_core_users)
     selected = set()
     chosen_influencers = []
@@ -285,7 +281,7 @@ def compute_coverage(target_percentage, total_core_users, influencer_to_core):
 # ================================
 st.title("Influencer Analysis Dashboard")
 
-# Slicer for Core Audience Threshold (minimum connections to be considered core)
+# Slicer for Core Audience Threshold (minimum distinct influencer connections)
 core_threshold = st.slider(
     "Minimum distinct influencer connections for a user to be considered core:",
     min_value=2,
@@ -304,7 +300,6 @@ target_coverage = st.slider(
     step=5,
     value=50
 )
-# Compute custom coverage using the helper function
 selected_custom, covered_custom = compute_coverage(
     target_coverage, results["total_core_users"], results["influencer_to_core"]
 )
@@ -323,7 +318,8 @@ st.write(f"To cover 50% of the core audience: **{results['selected_50_count']}**
 st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}** influencers (covering **{results['covered_100']}** core users).")
 
 st.header("Cost Estimation")
-st.write(f"Median ratio (view_count/like_count): **{results['median_ratio']:.2%}**")
+# Display the inverse of the median ratio: like_count/view_count
+st.write(f"Median ratio (like_count/view_count): **{(1/results['median_ratio']):.2%}**")
 st.write(f"Cheapest mix to cover 50% of core audience: **{results['cheapest_50_count']}** influencers with total cost **${results['cheapest_50_cost']:.2f}**.")
 st.write(f"Cheapest mix to cover 100% of core audience: **{results['cheapest_100_count']}** influencers with total cost **${results['cheapest_100_cost']:.2f}**.")
 
