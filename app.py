@@ -60,8 +60,8 @@ def load_data():
     
     im_with_username = add_influencer_username(im, i)
     ml_with_username = ml.merge(im_with_username[['pk_x', 'user_id', 'influencerusername']],
-                                left_on='media_id', right_on='pk_x', how='left')
-    return ml, im, i, ml_with_username
+                                  left_on='media_id', right_on='pk_x', how='left')
+    return ml, im, i, im_with_username, ml_with_username
 
 @st.cache_data
 
@@ -76,7 +76,7 @@ def compute_sampled_pairs(ml_with_username):
     return pd.concat(samples, ignore_index=True)
 
 # Load data only once
-ml, im, i, ml_with_username = load_data()
+ml, im, i, im_with_username, ml_with_username = load_data()
 sampled_pairs = compute_sampled_pairs(ml_with_username)
 
 # -------------------------------
