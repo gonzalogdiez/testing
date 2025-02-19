@@ -32,8 +32,8 @@ im = pd.read_csv("raw/influencer_media.csv")
 i = pd.read_csv("raw/influencers.csv")
 ml = pd.read_csv("raw/media_likers.csv")
 ml = ml[['pk', 'username', 'media_id']]
-im = [['taken_at', 'pk', 'id', 'media_type', 'code', 'caption', 'user', 'preview_comments', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'can_viewer_save', 'can_viewer_reshare', 'reshare_count', 'usertags', 'taken_at_ts', 'sponsor_tags', 'play_count', 'user_id', 'fb_like_count', 'view_count', 'owner', 'title', 'save_count', 'is_unified_video', 'commerciality_status', 'has_more_comments', 'max_num_visible_preview_comments', 'explore_hide_comments', 'caption_add_on', 'preview', 'media_overlay_info', 'media_note_mimicry', 'clips_text', 'thumbnails', 'cutout_stickers', 'visual_replies_info', 'visual_comment_reply_sticker_info', 'upcoming_event']]
-i = [['pk', 'follower_count', 'id', 'media_type', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count', 'owner', 'title', 'save_count']]
+im = [['pk', 'id', 'media_type', 'code', 'user', 'comment_count', 'has_liked', 'like_count', 'top_likers', 'reshare_count', 'usertags', 'play_count', 'user_id', 'fb_like_count', 'view_count']]
+i = [['pk', 'username', 'full_name', 'media_count', 'follower_count', 'following_count', 'account_type']]
 # Print some basic info (to console)
 max_follower_count = i['follower_count'].max()
 print(f"Maximum follower count: {max_follower_count}")
