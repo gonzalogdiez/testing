@@ -288,7 +288,7 @@ st.title("Influencer Analysis Dashboard")
 core_threshold = st.slider(
     "Minimum distinct influencer connections for a user to be considered core:",
     min_value=2,
-    max_value=10,
+    max_value=6,
     value=2
 )
 
