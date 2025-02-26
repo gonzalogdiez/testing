@@ -320,6 +320,8 @@ st.header("Coverage Metrics")
 st.write(f"To cover 50% of the core audience: **{results['selected_50_count']}** influencers (covering **{results['covered_50']}** core users).")
 st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}** influencers (covering **{results['covered_100']}** core users).")
 
+st.pyplot(plt.gcf())
+
 st.header("Cost Estimation")
 # Display the inverse of the median ratio: like_count/view_count
 st.write(f"Median ratio (like_count/view_count): **{(1/results['median_ratio']):.2%}**")
