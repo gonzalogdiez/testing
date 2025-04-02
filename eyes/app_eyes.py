@@ -28,7 +28,7 @@ def load_data():
         data = json.load(f)
 
     return data
-
+data = load_data()
 # Extract DataFrames from JSON:
 # Users (similar to the influencers Excel file)
 i = pd.json_normalize(data['result']['users'])
