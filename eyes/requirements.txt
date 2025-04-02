@@ -1,0 +1,8 @@
+streamlit
+pandas
+matplotlib
+networkx
+numpy
+pyvis
+gdown
+json
