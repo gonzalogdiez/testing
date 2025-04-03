@@ -13,7 +13,7 @@ import gdown
 # ================================
 # Data Loading & Preprocessing
 # ================================
-
+maxUploadSize = 400
 @st.cache_data
 def load_data():
     os.makedirs("raw", exist_ok=True)
