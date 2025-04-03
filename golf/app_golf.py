@@ -18,7 +18,7 @@ maxUploadSize = 400
 def load_data():
     os.makedirs("raw", exist_ok=True)
 
-    json_url = "https://drive.google.com/uc?export=download&id=1X5sByPqLC3q-WDct64DcMa7lLIJvV9QX"
+    json_url = "https://drive.google.com/uc?export=download&id=1X7uhjXNr7al2IBx-enLQT-ZEX6Ss3gU7"
     json_path = "raw/data.json"
 
     # Descargar el JSON si no existe localmente
