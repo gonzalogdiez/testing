@@ -156,11 +156,13 @@ st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}
 st.header("Campaign Planner")
 
 col1, col2 = st.columns(2)
-if col1.button("Calculate Campaign Metrics"):
+if col1.button("Calculate Campaign Metrics", key="calculate_button"):
     st.success("Metrics updated based on selected influencers.")
-if col2.button("Reset Influencer Selections"):
+
+if col2.button("Reset Influencer Selections", key="reset_button"):
     st.session_state['campaign_df']['Include in Network'] = False
     st.session_state['campaign_df']['Exclude from Analysis'] = False
+
 
 # Create full campaign table
 mg_df = pd.DataFrame(results['marginal_gains'], columns=['influencerusername', 'marginal_users_added'])
