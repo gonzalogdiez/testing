@@ -155,16 +155,6 @@ st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}
 # Campaign Planner
 st.header("Campaign Planner")
 
-col1, col2 = st.columns(2)
-if col1.button("Calculate Campaign Metrics", key="calculate_button"):
-    st.success("Metrics updated based on selected influencers.")
-
-if col2.button("Reset Influencer Selections", key="reset_button"):
-    st.session_state['campaign_df']['Include in Network'] = False
-    st.session_state['campaign_df']['Exclude from Analysis'] = False
-
-
-# Create full campaign table
 mg_df = pd.DataFrame(results['marginal_gains'], columns=['influencerusername', 'marginal_users_added'])
 df_campaign = results['df_influencers'].merge(mg_df, on='influencerusername', how='left')
 df_campaign['core_users_reached'] = (df_campaign['user_reach'] * results['median_ratio']).astype(int)
@@ -177,45 +167,53 @@ if 'campaign_df' not in st.session_state:
     df_campaign['Exclude from Analysis'] = False
     st.session_state['campaign_df'] = df_campaign.copy()
 
+# Define editable and renamed columns
+editable_columns = [
+    'Include in Network', 'Exclude from Analysis',
+    'influencerusername', 'median_est_view_count',
+    'core_users_reached', 'Marginal Core Users Added'
+]
+renamed_columns = {
+    'influencerusername': 'Influencer',
+    'median_est_view_count': 'Median Content Views',
+    'core_users_reached': 'Core Users Reached'
+}
+
+# Show editor
+edited_df = st.data_editor(
+    st.session_state['campaign_df'][editable_columns].rename(columns=renamed_columns),
+    key="editor_table",
+    use_container_width=True,
+    num_rows="fixed",
+    disabled=["Influencer", "Median Content Views", "Core Users Reached", "Marginal Core Users Added"]
+)
+
+col1, col2 = st.columns(2)
+if col1.button("Calculate Campaign Metrics", key="calculate_btn"):
+    reverse_renamed = {v: k for k, v in renamed_columns.items()}
+    df_to_save = edited_df.rename(columns=reverse_renamed)
+    for col in ['Include in Network', 'Exclude from Analysis']:
+        st.session_state['campaign_df'][col] = df_to_save[col]
+    st.success("Metrics updated based on selected influencers.")
+
+if col2.button("Reset Influencer Selections", key="reset_btn"):
+    st.session_state['campaign_df']['Include in Network'] = False
+    st.session_state['campaign_df']['Exclude from Analysis'] = False
+
 # Campaign Metrics
 st.subheader("Campaign Metrics")
 df = st.session_state['campaign_df'].copy()
-
-# Rename human-readable columns back to original names for metric logic
 df.rename(columns={
     'Influencer': 'influencerusername',
     'Median Content Views': 'median_est_view_count',
     'Core Users Reached': 'core_users_reached'
 }, inplace=True)
 
-# Filter out only selected + not excluded influencers
-selected = df[
-    (df['Include in Network']) &
-    (~df['Exclude from Analysis'])
-]
-
-# Now safe to access internal fields
-total_impressions = selected['median_est_view_count'].sum()
-total_reach = selected['user_reach'].sum() if 'user_reach' in selected.columns else 0
-total_core_reach = selected['core_users_reached'].sum()
-
-df = st.session_state['campaign_df'].copy()
-# Recover original column names before metrics
-df.rename(columns={
-    'Median Content Views': 'median_est_view_count',
-    'Core Users Reached': 'core_users_reached',
-    'Influencer': 'influencerusername'
-}, inplace=True)
-
-selected = df[
-    (df['Include in Network']) &
-    (~df['Exclude from Analysis'])
-]
+selected = df[(df['Include in Network']) & (~df['Exclude from Analysis'])]
 
 total_impressions = selected['median_est_view_count'].sum()
 total_reach = selected['user_reach'].sum() if 'user_reach' in selected.columns else 0
 total_core_reach = selected['core_users_reached'].sum()
-
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Estimated Impressions", f"{total_impressions:,}")
@@ -223,40 +221,5 @@ col2.metric("Estimated Reach", f"{total_reach:,}")
 col3.metric("Core Audience Impressions", f"~{int(total_impressions * 0.3):,}")
 col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 
-# Influencer Table
 st.subheader("Influencer Network Table")
-
-# Edit using original column names (these always exist)
-editable_columns = [
-    'Include in Network', 'Exclude from Analysis',
-    'influencerusername', 'median_est_view_count',
-    'core_users_reached', 'Marginal Core Users Added'
-]
-
-# Rename only for display
-renamed_columns = {
-    'influencerusername': 'Influencer',
-    'median_est_view_count': 'Median Content Views',
-    'core_users_reached': 'Core Users Reached'
-}
-
-# Show the editor
-edited_df = st.data_editor(
-    st.session_state['campaign_df'][editable_columns].rename(columns=renamed_columns),
-    use_container_width=True,
-    num_rows="fixed",
-    disabled=["Influencer", "Median Content Views", "Core Users Reached", "Marginal Core Users Added"]
-)
-
-# Save edits only when user clicks the button
-if col1.button("Calculate Campaign Metrics"):
-    # Map back renamed columns for updating the session state
-    reverse_renamed = {v: k for k, v in renamed_columns.items()}
-    columns_to_update = ['Include in Network', 'Exclude from Analysis']
-    for col in columns_to_update:
-        st.session_state['campaign_df'][col] = edited_df[col]
-    st.success("Metrics updated based on selected influencers.")
-
-
-
 st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Metrics update accordingly.")
