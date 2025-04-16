@@ -157,3 +157,8 @@ for idx, row in audience_groups.iterrows():
 
 # Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
 graph_html = net.generate_html(notebook=True)
+
+
+st.header("Interactive PyVis Graph")
+components.html(graph_html, height=800, scrolling=False)
+
