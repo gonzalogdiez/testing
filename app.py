@@ -223,7 +223,8 @@ col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 
 # Influencer Table
 st.subheader("Influencer Network Table")
-st.session_state['campaign_df'] = st.data_editor(
+
+edited_df = st.data_editor(
     st.session_state['campaign_df'][[
         'Include in Network', 'Exclude from Analysis', 'Influencer',
         'Median Content Views', 'Core Users Reached', 'Marginal Core Users Added'
@@ -235,6 +236,12 @@ st.session_state['campaign_df'] = st.data_editor(
         "Core Users Reached", "Marginal Core Users Added"
     ]
 )
+
+# Store edits only when clicking "Calculate Campaign Metrics"
+if col1.button("Calculate Campaign Metrics"):
+    st.session_state['campaign_df'].loc[:, ['Include in Network', 'Exclude from Analysis']] = \
+        edited_df[['Include in Network', 'Exclude from Analysis']]
+    st.success("Metrics updated based on selected influencers.")
 
 
 st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Metrics update accordingly.")
