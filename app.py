@@ -224,24 +224,37 @@ col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 # Influencer Table
 st.subheader("Influencer Network Table")
 
+# Edit using original column names (these always exist)
+editable_columns = [
+    'Include in Network', 'Exclude from Analysis',
+    'influencerusername', 'median_est_view_count',
+    'core_users_reached', 'Marginal Core Users Added'
+]
+
+# Rename only for display
+renamed_columns = {
+    'influencerusername': 'Influencer',
+    'median_est_view_count': 'Median Content Views',
+    'core_users_reached': 'Core Users Reached'
+}
+
+# Show the editor
 edited_df = st.data_editor(
-    st.session_state['campaign_df'][[
-        'Include in Network', 'Exclude from Analysis', 'Influencer',
-        'Median Content Views', 'Core Users Reached', 'Marginal Core Users Added'
-    ]],
+    st.session_state['campaign_df'][editable_columns].rename(columns=renamed_columns),
     use_container_width=True,
     num_rows="fixed",
-    disabled=[
-        "Influencer", "Median Content Views",
-        "Core Users Reached", "Marginal Core Users Added"
-    ]
+    disabled=["Influencer", "Median Content Views", "Core Users Reached", "Marginal Core Users Added"]
 )
 
-# Store edits only when clicking "Calculate Campaign Metrics"
+# Save edits only when user clicks the button
 if col1.button("Calculate Campaign Metrics"):
-    st.session_state['campaign_df'].loc[:, ['Include in Network', 'Exclude from Analysis']] = \
-        edited_df[['Include in Network', 'Exclude from Analysis']]
+    # Map back renamed columns for updating the session state
+    reverse_renamed = {v: k for k, v in renamed_columns.items()}
+    columns_to_update = ['Include in Network', 'Exclude from Analysis']
+    for col in columns_to_update:
+        st.session_state['campaign_df'][col] = edited_df[col]
     st.success("Metrics updated based on selected influencers.")
+
 
 
 st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Metrics update accordingly.")
