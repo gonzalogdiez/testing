@@ -154,6 +154,8 @@ st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}
 
 # Campaign Planner
 st.header("Campaign Planner")
+st.subheader("Influencer Network Table")
+st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Only one can be selected at a time.")
 
 mg_df = pd.DataFrame(results['marginal_gains'], columns=['influencerusername', 'marginal_users_added'])
 df_campaign = results['df_influencers'].merge(mg_df, on='influencerusername', how='left')
@@ -229,8 +231,7 @@ col2.metric("Estimated Reach", f"{total_reach:,}")
 col3.metric("Core Audience Impressions", f"~{int(total_impressions * 0.3):,}")
 col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 
-st.subheader("Influencer Network Table")
-st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Only one can be selected at a time.")
+
 
 
 # ================================ 
