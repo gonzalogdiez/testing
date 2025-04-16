@@ -225,16 +225,16 @@ col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 st.subheader("Influencer Network Table")
 st.session_state['campaign_df'] = st.data_editor(
     st.session_state['campaign_df'][[
-        'Include in Network', 'Exclude from Analysis', 'influencerusername',
-        'median_est_view_count', 'core_users_reached', 'Marginal Core Users Added'
-    ]].rename(columns={
-        'influencerusername': 'Influencer',
-        'median_est_view_count': 'Median Content Views',
-        'core_users_reached': 'Core Users Reached'
-    }),
+        'Include in Network', 'Exclude from Analysis', 'Influencer',
+        'Median Content Views', 'Core Users Reached', 'Marginal Core Users Added'
+    ]],
     use_container_width=True,
     num_rows="fixed",
-    disabled=["Influencer", "Median Content Views", "Core Users Reached", "Marginal Core Users Added"]
+    disabled=[
+        "Influencer", "Median Content Views",
+        "Core Users Reached", "Marginal Core Users Added"
+    ]
 )
+
 
 st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Metrics update accordingly.")
