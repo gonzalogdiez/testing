@@ -177,7 +177,11 @@ if 'campaign_df' not in st.session_state:
 
 # Campaign Metrics
 st.subheader("Campaign Metrics")
-selected = st.session_state['campaign_df'][st.session_state['campaign_df']['Include in Network']]
+selected = st.session_state['campaign_df'][
+    (st.session_state['campaign_df']['Include in Network']) &
+    (~st.session_state['campaign_df']['Exclude from Analysis'])
+]
+
 total_impressions = selected['median_est_view_count'].sum()
 total_reach = selected['user_reach'].sum()
 total_core_reach = selected['core_users_reached'].sum()
