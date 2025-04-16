@@ -178,6 +178,26 @@ if 'campaign_df' not in st.session_state:
 # Campaign Metrics
 st.subheader("Campaign Metrics")
 df = st.session_state['campaign_df'].copy()
+
+# Rename human-readable columns back to original names for metric logic
+df.rename(columns={
+    'Influencer': 'influencerusername',
+    'Median Content Views': 'median_est_view_count',
+    'Core Users Reached': 'core_users_reached'
+}, inplace=True)
+
+# Filter out only selected + not excluded influencers
+selected = df[
+    (df['Include in Network']) &
+    (~df['Exclude from Analysis'])
+]
+
+# Now safe to access internal fields
+total_impressions = selected['median_est_view_count'].sum()
+total_reach = selected['user_reach'].sum() if 'user_reach' in selected.columns else 0
+total_core_reach = selected['core_users_reached'].sum()
+
+df = st.session_state['campaign_df'].copy()
 # Recover original column names before metrics
 df.rename(columns={
     'Median Content Views': 'median_est_view_count',
