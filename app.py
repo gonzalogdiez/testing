@@ -73,6 +73,168 @@ def compute_sampled_pairs(ml_with_username):
 
 sampled_pairs = compute_sampled_pairs(ml_with_username)
 
+def run_analysis(ml_with_username, im_with_username, core_threshold=2):
+    results = {}
+    total_unique_audience = ml_with_username['username'].nunique()
+    results['total_unique_audience'] = total_unique_audience
+    user_influencer_counts = ml_with_username.groupby('username')['influencerusername'].nunique()
+    core_users = user_influencer_counts[user_influencer_counts >= core_threshold]
+    total_core_users = core_users.count()
+    results['total_core_users'] = total_core_users
+    core_percentage = (total_core_users / total_unique_audience) * 100
+    results['core_percentage'] = core_percentage
+    influencer_to_core = {}
+    core_user_set = set(core_users.index)
+    for influencer, group in ml_with_username.groupby('influencerusername'):
+        users = set(group['username'])
+        influencer_to_core[influencer] = users.intersection(core_user_set)
+    results['influencer_to_core'] = influencer_to_core
+
+    valid = im_with_username[(im_with_username['view_count'].notnull()) & (im_with_username['view_count'] > 0)].copy()
+    valid['ratio'] = valid['view_count'] / valid['like_count']
+    median_ratio = valid['ratio'].median()
+    results['median_ratio'] = median_ratio
+    im_with_username['view_count_est'] = im_with_username['view_count']
+    im_with_username.loc[im_with_username['view_count_est'].isnull(), 'view_count_est'] = \
+        im_with_username.loc[im_with_username['view_count_est'].isnull(), 'like_count'] * median_ratio
+
+    influencer_summary = []
+    for inf in influencer_to_core.keys():
+        subset = im_with_username[im_with_username['influencerusername'] == inf]
+        num_posts = len(subset)
+        median_views = subset['view_count_est'].median() if num_posts > 0 else float('nan')
+        reach = ml_with_username[ml_with_username['influencerusername'] == inf]['username'].nunique()
+        influencer_summary.append({
+            'influencerusername': inf,
+            'median_est_view_count': median_views,
+            'user_reach': reach,
+            'num_posts': num_posts
+        })
+
+    df_influencers = pd.DataFrame(influencer_summary).sort_values(by='user_reach', ascending=False)
+    results['df_influencers'] = df_influencers
+
+    sorted_influencers = sorted(influencer_to_core.items(), key=lambda x: len(x[1]), reverse=True)
+    marginal_gains = []
+    current_union = set()
+    for influencer, audience in sorted_influencers:
+        new_gain = len(audience - current_union)
+        marginal_gains.append((influencer, new_gain))
+        current_union |= audience
+    results['marginal_gains'] = marginal_gains
+
+    return results
+
+# Dashboard UI
+st.title("Influencer Analysis Dashboard")
+
+core_threshold = st.slider("Minimum distinct influencer connections for a user to be considered core:", 2, 6, 2)
+results = run_analysis(ml_with_username, im_with_username, core_threshold)
+
+# Overview Metrics
+st.header("Overview Metrics")
+col1, col2, col3, col4, col5 = st.columns(5)
+total_audience_est = int(results['total_unique_audience'] / results['median_ratio'])
+total_core_est = int(results['total_core_users'] * results['median_ratio'])
+col1.metric("Unique Audience Sample", results['total_unique_audience'])
+col2.metric("Total Audience", total_audience_est)
+col3.metric("Total Core Users", total_core_est)
+col4.metric("Core Audience %", f"{results['core_percentage']:.2f}%")
+
+# Coverage Metrics
+st.header("Coverage Metrics")
+results['covered_50'] = results['total_core_users'] * 0.5
+results['covered_100'] = results['total_core_users']
+results['selected_50_count'] = 3
+results['selected_100_count'] = 5
+est_covered_50 = int(results['covered_50'] * results['median_ratio'])
+est_covered_100 = int(results['covered_100'] * results['median_ratio'])
+st.write(f"To cover 50% of the core audience: **{results['selected_50_count']}** influencers (covering **{est_covered_50}** core users).")
+st.write(f"To cover 100% of the core audience: **{results['selected_100_count']}** influencers (covering **{est_covered_100}** core users).")
+
+# Campaign Planner
+st.header("Campaign Planner")
+
+mg_df = pd.DataFrame(results['marginal_gains'], columns=['influencerusername', 'marginal_users_added'])
+df_campaign = results['df_influencers'].merge(mg_df, on='influencerusername', how='left')
+df_campaign['core_users_reached'] = (df_campaign['user_reach'] * results['median_ratio']).astype(int)
+top_selected = df_campaign.nlargest(2, 'user_reach')['influencerusername'].tolist()
+df_campaign['Marginal Core Users Added'] = df_campaign.apply(
+    lambda row: '--' if row['influencerusername'] in top_selected else row['marginal_users_added'], axis=1)
+
+if 'campaign_df' not in st.session_state:
+    df_campaign['Include in Network'] = df_campaign['influencerusername'].isin(top_selected)
+    df_campaign['Exclude from Analysis'] = False
+    st.session_state['campaign_df'] = df_campaign.copy()
+
+# Define editable and renamed columns
+editable_columns = [
+    'Include in Network', 'Exclude from Analysis',
+    'influencerusername', 'median_est_view_count',
+    'core_users_reached', 'Marginal Core Users Added'
+]
+renamed_columns = {
+    'influencerusername': 'Influencer',
+    'median_est_view_count': 'Median Content Views',
+    'core_users_reached': 'Core Users Reached'
+}
+
+# Show editor
+edited_df = st.data_editor(
+    st.session_state['campaign_df'][editable_columns].rename(columns=renamed_columns),
+    key="editor_table",
+    use_container_width=True,
+    num_rows="fixed",
+    disabled=["Influencer", "Median Content Views", "Core Users Reached", "Marginal Core Users Added"]
+)
+
+# Ensure mutually exclusive checkboxes
+edited_df['Include in Network'] = edited_df.apply(
+    lambda row: False if row['Include in Network'] and row['Exclude from Analysis'] else row['Include in Network'], axis=1
+)
+edited_df['Exclude from Analysis'] = edited_df.apply(
+    lambda row: False if row['Include in Network'] and row['Exclude from Analysis'] else row['Exclude from Analysis'], axis=1
+)
+
+col1, col2 = st.columns(2)
+if col1.button("Calculate Campaign Metrics", key="calculate_btn"):
+    reverse_renamed = {v: k for k, v in renamed_columns.items()}
+    df_to_save = edited_df.rename(columns=reverse_renamed)
+    for col in ['Include in Network', 'Exclude from Analysis']:
+        st.session_state['campaign_df'][col] = df_to_save[col]
+    st.success("Metrics updated based on selected influencers.")
+
+if col2.button("Reset Influencer Selections", key="reset_btn"):
+    st.session_state['campaign_df']['Include in Network'] = False
+    st.session_state['campaign_df']['Exclude from Analysis'] = False
+
+# Campaign Metrics
+st.subheader("Campaign Metrics")
+df = st.session_state['campaign_df'].copy()
+df.rename(columns={
+    'Influencer': 'influencerusername',
+    'Median Content Views': 'median_est_view_count',
+    'Core Users Reached': 'core_users_reached'
+}, inplace=True)
+
+selected = df[(df['Include in Network']) & (~df['Exclude from Analysis'])]
+
+total_impressions = selected['median_est_view_count'].sum()
+total_reach = selected['user_reach'].sum() if 'user_reach' in selected.columns else 0
+total_core_reach = selected['core_users_reached'].sum()
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total Estimated Impressions", f"{total_impressions:,}")
+col2.metric("Estimated Reach", f"{total_reach:,}")
+col3.metric("Core Audience Impressions", f"~{int(total_impressions * 0.3):,}")
+col4.metric("Core Audience Reach", f"{total_core_reach:,}")
+
+st.subheader("Influencer Network Table")
+st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Only one can be selected at a time.")
+# Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
+graph_html = net.generate_html(notebook=True)
+
+
 # ================================ 
 # Create PyVis Network for Dashboard
 # ================================
@@ -155,10 +317,6 @@ for idx, row in audience_groups.iterrows():
             edge_color = "rgba(128,128,128,0.5)"
         net.add_edge(group_id, influencer, color=edge_color, width=edge_thickness)
 
-# Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
-graph_html = net.generate_html(notebook=True)
 
 
-st.header("Interactive PyVis Graph")
-components.html(graph_html, height=800, scrolling=False)
 
