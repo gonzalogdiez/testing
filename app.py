@@ -177,14 +177,23 @@ if 'campaign_df' not in st.session_state:
 
 # Campaign Metrics
 st.subheader("Campaign Metrics")
-selected = st.session_state['campaign_df'][
-    (st.session_state['campaign_df']['Include in Network']) &
-    (~st.session_state['campaign_df']['Exclude from Analysis'])
+df = st.session_state['campaign_df'].copy()
+# Recover original column names before metrics
+df.rename(columns={
+    'Median Content Views': 'median_est_view_count',
+    'Core Users Reached': 'core_users_reached',
+    'Influencer': 'influencerusername'
+}, inplace=True)
+
+selected = df[
+    (df['Include in Network']) &
+    (~df['Exclude from Analysis'])
 ]
 
 total_impressions = selected['median_est_view_count'].sum()
-total_reach = selected['user_reach'].sum()
+total_reach = selected['user_reach'].sum() if 'user_reach' in selected.columns else 0
 total_core_reach = selected['core_users_reached'].sum()
+
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Estimated Impressions", f"{total_impressions:,}")
