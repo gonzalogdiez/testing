@@ -231,8 +231,6 @@ col4.metric("Core Audience Reach", f"{total_core_reach:,}")
 
 st.subheader("Influencer Network Table")
 st.caption("✔ Use checkboxes to include/exclude influencers from the network or analysis. Only one can be selected at a time.")
-# Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
-graph_html = net.generate_html(notebook=True)
 
 
 # ================================ 
@@ -316,6 +314,10 @@ for idx, row in audience_groups.iterrows():
         else:
             edge_color = "rgba(128,128,128,0.5)"
         net.add_edge(group_id, influencer, color=edge_color, width=edge_thickness)
+
+# Instead of net.show(), we generate the HTML and embed it in the Streamlit app.
+graph_html = net.generate_html(notebook=True)
+
 
 
 
