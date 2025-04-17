@@ -161,65 +161,84 @@ st.write("• 50% coverage → 3 influencers")
 st.write("• 100% coverage → 5 influencers")
 
 # ----------------------------
-# Campaign Planner — 3‑box multiselect UI
+# Campaign Planner — 3‑box multiselect in a form
 # ----------------------------
 st.header("Campaign Planner")
 st.subheader("Influencer Selection")
-st.caption("Drag names from the middle into Exclude (left) or Include (right). The ones remaining in the center are Optional.")
+st.caption("Move names from Optional into Exclude (left) or Include (right). Then click **Update Selections**.")
 
-# pull the full list of influencers
+# full list of influencers
 all_inf = results['df_influencers']['influencerusername'].tolist()
 
-# initialize session_state lists if needed
-if 'must_exclude' not in st.session_state: st.session_state.must_exclude = []
-if 'optional'    not in st.session_state: st.session_state.optional    = all_inf.copy()
-if 'must_include' not in st.session_state: st.session_state.must_include = []
+# initialize session state if missing
+if 'must_exclude' not in st.session_state:
+    st.session_state.must_exclude = []
+if 'optional' not in st.session_state:
+    st.session_state.optional = all_inf.copy()
+if 'must_include' not in st.session_state:
+    st.session_state.must_include = []
 
-# three columns for the lists
-col_exc, col_mid, col_inc = st.columns(3)
-
-with col_exc:
-    st.markdown("**Exclude**")
-    must_exclude = st.multiselect(
-        label="",
+with st.form("selection_form"):
+    exclude = st.multiselect(
+        label="Exclude influencers",
         options=all_inf,
         default=st.session_state.must_exclude,
-        key="sel_exclude"
+        label_visibility="visible"
     )
 
-# recompute remaining after exclude
-remaining = [x for x in all_inf if x not in must_exclude]
+    # what remains after exclusion
+    remaining = [x for x in all_inf if x not in exclude]
 
-with col_mid:
-    st.markdown("**Optional**")
     optional = st.multiselect(
-        label="",
+        label="Optional influencers",
         options=remaining,
         default=[x for x in st.session_state.optional if x in remaining],
-        key="sel_optional"
+        label_visibility="visible"
     )
 
-# recompute available for include
-available_for_include = [x for x in remaining if x not in optional]
+    # what's left for include
+    include_options = [x for x in remaining if x not in optional]
 
-with col_inc:
-    st.markdown("**Include**")
-    must_include = st.multiselect(
-        label="",
-        options=available_for_include,
-        default=[x for x in st.session_state.must_include if x in available_for_include],
-        key="sel_include"
+    include = st.multiselect(
+        label="Include influencers",
+        options=include_options,
+        default=[x for x in st.session_state.must_include if x in include_options],
+        label_visibility="visible"
     )
 
-# persist back to session_state
-st.session_state.must_exclude = must_exclude
-st.session_state.optional    = optional
-st.session_state.must_include = must_include
+    submitted = st.form_submit_button("Update Selections")
 
-# now you can compute your final “selected” influencers however you like:
-final_selected = must_include + optional
+if submitted:
+    # persist selections
+    st.session_state.must_exclude = exclude
+    st.session_state.optional    = optional
+    st.session_state.must_include = include
+    st.success("Selections updated!")
 
-# and your final “dropped” (excluded) list is must_exclude
+# ----------------------------
+# Campaign Metrics
+# ----------------------------
+st.subheader("Campaign Metrics")
+
+# rebuild a small df for metrics
+df_inf = results['df_influencers'].copy()
+df_inf['core_users_reached'] = (df_inf['user_reach'] * results['median_ratio']).astype(int)
+df_inf.set_index('influencerusername', inplace=True)
+
+# final selected = include + optional
+final_selected = st.session_state.must_include + st.session_state.optional
+
+# compute metrics
+total_impr   = int(df_inf.loc[final_selected, 'median_est_view_count'].sum())
+total_reach  = int(df_inf.loc[final_selected, 'user_reach'].sum())
+core_reach   = int(df_inf.loc[final_selected, 'core_users_reached'].sum())
+core_impr    = int(total_impr * 0.3)  # or your own core‐impression logic
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Total Impressions",       f"{total_impr:,}")
+m2.metric("Estimated Reach",         f"{total_reach:,}")
+m3.metric("Core Audience Impr. (~30%)", f"{core_impr:,}")
+m4.metric("Core Audience Reach",     f"{core_reach:,}")
 
 
 # ----------------------------
