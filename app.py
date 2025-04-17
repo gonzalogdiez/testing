@@ -1,6 +1,3 @@
-Here’s the fixed, copy‑and‑paste‑ready script. The only change is that when merging posts→users we preserve the original `pk` by using `suffixes=('','_user')`, so later `posts[['pk','influencerusername']]` works without errors.
-
-```python
 import math
 import os
 import json
