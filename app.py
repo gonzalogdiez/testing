@@ -269,19 +269,22 @@ final_selected = list(must_inc | auto_sel)
 # Campaign Metrics
 # ----------------------------
 st.subheader("Campaign Metrics")
-df_inf = results['df_influencers'].copy().set_index('influencerusername')
-df_inf['core_users_reached'] = (df_inf['user_reach'] * results['median_ratio']).astype(int)
 
+# grab the DataFrame you built in run_analysis (it already has real core_users_reached)
+df_inf = results['df_influencers'].copy().set_index('influencerusername')
+
+# sum over your final_selected list
 imp_total   = int(df_inf.loc[final_selected, 'median_est_view_count'].sum())
 reach_total = int(df_inf.loc[final_selected, 'user_reach'].sum())
 core_reach  = int(df_inf.loc[final_selected, 'core_users_reached'].sum())
 core_impr   = int(imp_total * 0.3)
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Total Impressions",         f"{imp_total:,}")
-m2.metric("Estimated Reach",           f"{reach_total:,}")
+m1.metric("Total Impressions",          f"{imp_total:,}")
+m2.metric("Estimated Reach",            f"{reach_total:,}")
 m3.metric("Core Audience Impr. (~30%)", f"{core_impr:,}")
-m4.metric("Core Audience Reach",       f"{core_reach:,}")
+m4.metric("Core Audience Reach",        f"{core_reach:,}")
+
 
 # ----------------------------
 # PyVis Network Visualization (highlight final_selected)
