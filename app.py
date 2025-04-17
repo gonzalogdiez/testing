@@ -79,10 +79,14 @@ def run_analysis(lk, ps, threshold):
             df_inf['view_count'],
             df_inf['like_count'] * ratio
         )
+        # ignore zero likes when computing median engagement
+        positive_likes = df_inf[df_inf['like_count'] > 0]['like_count']
+        median_eng = int(positive_likes.median()) if not positive_likes.empty else 0
+
         summary.append({
             'influencerusername':    inf,
             'median_est_view_count': int(df_inf['view_est'].median()),
-            'median_engagement':     int(df_inf['like_count'].median()),
+            'median_engagement':     median_eng,
             'user_reach':            reach_map.get(inf, 0),
             'core_users_reached':    len(core_set),
             'num_posts':             len(df_inf)
@@ -118,11 +122,11 @@ c2.metric("Core Users", results['total_core_users'])
 c3.metric("Core %", f"{results['core_percentage']}%")
 c4.metric("Avg Posts", f"{int(df_inf['num_posts'].mean())}")
 
-# Check for unusually low median engagement
+# Alert for low median engagement
 low_eng = df_inf[df_inf['median_engagement'] < 5]
 if not low_eng.empty:
-    st.subheader("⚠️ Low Median Engagement Alerts")
-    st.write("The following influencers have median engagement below 5 likes per post:")
+    st.subheader("⚠️ Low Engagement Alert")
+    st.write("Influencers with median engagement < 5:")
     st.dataframe(low_eng['median_engagement'])
 
 # Coverage Metrics
@@ -193,7 +197,6 @@ reach_map = likers.groupby('influencerusername')['username'].nunique()
 for inf in sampled_pairs['influencerusername'].unique():
     r = reach_map.get(inf, 0)
     sz = 20 + 2 * math.sqrt(r)
-    # always show label
     net.add_node(
         inf,
         label=inf,
