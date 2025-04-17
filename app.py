@@ -345,3 +345,28 @@ st.dataframe(
 st.subheader("Raw Influencer Data")
 st.dataframe(df_inf)
 
+# ----------------------------
+# Debug: inspect core_reach calculation
+# ----------------------------
+st.subheader("Debug Core Reach Calculation")
+
+# 1) Show which influencers are in final_selected
+st.write("Final selected influencers:", final_selected)
+
+# 2) Extract their core_users_reached values
+core_series = df_inf.loc[final_selected, 'core_users_reached']
+st.write("Series of core_users_reached for each influencer:")
+st.dataframe(core_series.to_frame(name="core_users_reached"))
+
+# 3) Print each one line by line
+for inf, val in core_series.items():
+    st.write(f"- {inf}: {val}")
+
+# 4) Show the sum operation explicitly
+core_sum = core_series.sum()
+st.write("Sum of all above values (core_reach):", core_sum)
+
+# 5) (Re‑assign core_reach for rest of your app)
+core_reach = int(core_sum)
+
+
