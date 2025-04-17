@@ -108,16 +108,36 @@ def run_analysis(ml, im, threshold=2):
     results['median_ratio'] = med_ratio
     im['view_count_est'] = im['view_count'].fillna(im['like_count'] * med_ratio)
 
-    summary = []
-    for inf, aud in inf2core.items():
-        subset = im[im['influencerusername'] == inf]
-        summary.append({
-            'influencerusername': inf,
-            'median_est_view_count': subset['view_count_est'].median() if len(subset) else np.nan,
-            'user_reach': len(subset),
-            'num_posts': len(subset)
+        influencer_summary = []
+    # pre‐compute total reach per influencer
+    total_reach_map = ml_with_username.groupby('influencerusername')['username']\
+                                      .nunique().to_dict()
+
+    for inf, core_users in inf2core.items():
+        # number of unique viewers
+        reach = total_reach_map.get(inf, 0)
+        # number of posts
+        num_posts = int(im_with_username[
+            im_with_username['influencerusername'] == inf
+        ].shape[0])
+        # median estimated views
+        median_views = im_with_username[
+            im_with_username['influencerusername'] == inf
+        ]['view_count_est'].median() if num_posts > 0 else np.nan
+
+        influencer_summary.append({
+            'influencerusername':     inf,
+            'median_est_view_count':  median_views,
+            'user_reach':             reach,
+            'core_users_reached':     len(core_users),
+            'num_posts':              num_posts
         })
-    results['df_influencers'] = pd.DataFrame(summary).sort_values('user_reach', ascending=False)
+
+    results['df_influencers'] = (
+        pd.DataFrame(influencer_summary)
+          .sort_values('user_reach', ascending=False)
+          .reset_index(drop=True)
+    )
 
     sorted_inf = sorted(inf2core.items(), key=lambda x: len(x[1]), reverse=True)
     marg = []
@@ -305,17 +325,18 @@ components.html(graph_html, height=850, scrolling=True)
 # ----------------------------
 st.header("Influencer Details")
 detail_df = results['df_influencers'].copy()
-detail_df['core_users_reached'] = (detail_df['user_reach'] * results['median_ratio']).astype(int)
 detail_df['Selected'] = detail_df['influencerusername'].isin(final_selected)
+
 st.dataframe(
     detail_df.rename(columns={
-        'influencerusername':'Influencer',
+        'influencerusername':  'Influencer',
+        'user_reach':          'Reach',
+        'core_users_reached':  'Core Users Reached',
         'median_est_view_count':'Median Views',
-        'user_reach':'Reach',
-        'core_users_reached':'Core Users Reached',
-        'num_posts':'Num Posts'
+        'num_posts':           'Num Posts'
     })[[
         'Influencer','Reach','Core Users Reached','Median Views','Num Posts','Selected'
     ]],
     use_container_width=True
 )
+
