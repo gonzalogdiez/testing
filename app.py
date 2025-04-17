@@ -1,372 +1,215 @@
 import math
+import os
 import json
-import pandas as pd
-import networkx as nx
-from pyvis.network import Network
+import gdown
 import numpy as np
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import os
-import gdown
+from pyvis.network import Network
 
-# ----------------------------
-# Load & cache raw JSON data
-# ----------------------------
 @st.cache_data
 def load_data():
     os.makedirs("raw", exist_ok=True)
-    json_url = "https://drive.google.com/uc?export=download&id=1WvkdezotvWru3157q6YKDkdUQuXgUQ6O"
-    json_path = "raw/data.json"
-    if not os.path.exists(json_path):
-        gdown.download(json_url, json_path, quiet=False)
-    with open(json_path, 'r', encoding='utf-8') as f:
+    url = "https://drive.google.com/uc?export=download&id=1WvkdezotvWru3157q6YKDkdUQuXgUQ6O"
+    path = "raw/data.json"
+    if not os.path.exists(path):
+        gdown.download(url, path, quiet=False)
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 data = load_data()
 
-# ----------------------------
-# Normalize into DataFrames
-# ----------------------------
-i  = pd.json_normalize(data['result']['users'])
-im = pd.json_normalize(data['result']['media_posts'])
-ml = pd.json_normalize(data['result']['likers'], record_path=['users'], meta=['media_id'])
+users = pd.json_normalize(data['result']['users'])[['pk','username']].astype(str)
+posts = pd.json_normalize(data['result']['media_posts'])[['pk','user_id','play_count','like_count']]
+likers = pd.json_normalize(data['result']['likers'], record_path=['users'], meta=['media_id'])[['pk','username','media_id']]
 
-im = im[['pk','user_id','play_count','like_count']]
-i  = i[['pk','username']]
-ml = ml[['pk','username','media_id']]
+posts['user_id'] = posts['user_id'].astype(str)
+users['pk'] = users['pk'].astype(str)
+likers['pk'] = likers['pk'].astype(str)
 
-im['user_id'] = im['user_id'].astype(str)
-i['pk']        = i['pk'].astype(str)
-ml['pk']       = ml['pk'].astype(str)
-
-# ----------------------------
-# Merge influencer usernames
-# ----------------------------
-def add_influencer_username(im, i):
-    return im.merge(
-        i[['pk','username']],
-        left_on='user_id',
-        right_on='pk',
-        how='left',
-        suffixes=('','_influencer')
-    )
-
-im_with_username = add_influencer_username(im, i)
-ml_with_username = ml.merge(
-    im_with_username[['pk','user_id','play_count','like_count','username']],
-    left_on='media_id', right_on='pk', how='left'
+posts = (
+    posts
+    .merge(users, left_on='user_id', right_on='pk', how='left')
+    .rename(columns={'play_count':'view_count','username':'influencerusername'})
 )
-
-im_with_username.rename(
-    columns={'play_count':'view_count','username':'influencerusername'},
-    inplace=True
+likers = (
+    likers
+    .merge(posts[['pk','influencerusername']], left_on='media_id', right_on='pk', how='left')
 )
-ml_with_username.rename(
-    columns={'username_x':'username','username_y':'influencerusername'},
-    inplace=True
-)
-ml_with_username.dropna(subset=['influencerusername'], inplace=True)
+likers.dropna(subset=['influencerusername'], inplace=True)
 
-# ----------------------------
-# Sample for network layout
-# ----------------------------
 @st.cache_data
-def compute_sampled_pairs(ml):
+def sample_pairs(lk):
     samples = []
-    for inf, grp in ml.groupby('influencerusername'):
+    for inf, grp in lk.groupby('influencerusername'):
         n = len(grp)
-        k = max(int(0.03 * n), 5)
-        k = min(k, n)
-        samples.append(grp.sample(n=k, random_state=42))
+        k = min(max(int(0.03 * n), 5), n)
+        samples.append(grp.sample(k, random_state=42))
     return pd.concat(samples, ignore_index=True)
 
-sampled_pairs = compute_sampled_pairs(ml_with_username)
+sampled_pairs = sample_pairs(likers)
 
-# ----------------------------
-# Core analysis
-# ----------------------------
-def run_analysis(ml, im, threshold=2):
-    results = {}
-    total_unique = ml['username'].nunique()
-    results['total_unique_audience'] = total_unique
-
-    uic  = ml.groupby('username')['influencerusername'].nunique()
-    core = uic[uic >= threshold]
-    results['total_core_users'] = core.count()
-    results['core_percentage'] = results['total_core_users'] / total_unique * 100
-    core_set = set(core.index)
-
-    inf2core = {
-        inf: set(grp['username']).intersection(core_set)
-        for inf, grp in ml.groupby('influencerusername')
+def run_analysis(lk, ps, threshold):
+    res = {}
+    res['total_unique_audience'] = lk['username'].nunique()
+    uic = lk.groupby('username')['influencerusername'].nunique()
+    core = uic[uic >= threshold].index
+    res['total_core_users'] = len(core)
+    res['core_percentage'] = len(core) / res['total_unique_audience'] * 100
+    res['influencer_to_core'] = {
+        inf: set(grp['username']).intersection(core)
+        for inf, grp in lk.groupby('influencerusername')
     }
-    results['influencer_to_core'] = inf2core
+    reach_map = lk.groupby('influencerusername')['username'].nunique().to_dict()
 
-    valid = im[im['view_count'] > 0].copy()
-    valid['ratio'] = valid['view_count'] / valid['like_count']
-    med_ratio = valid['ratio'].median()
-    results['median_ratio'] = med_ratio
-    im['view_count_est'] = im['view_count'].fillna(im['like_count'] * med_ratio)
+    valid_all = ps[ps['view_count'] > 0]
+    global_ratio = (valid_all['view_count'] / valid_all['like_count']).median()
 
-    influencer_summary = []
-    # pre‐compute total reach per influencer
-    total_reach_map = ml_with_username.groupby('influencerusername')['username']\
-                                      .nunique().to_dict()
-
-    for inf, core_users in inf2core.items():
-        # number of unique viewers
-        reach = total_reach_map.get(inf, 0)
-        # number of posts
-        num_posts = int(im_with_username[
-            im_with_username['influencerusername'] == inf
-        ].shape[0])
-        # median estimated views
-        median_views = im_with_username[
-            im_with_username['influencerusername'] == inf
-        ]['view_count_est'].median() if num_posts > 0 else np.nan
-
-        influencer_summary.append({
-            'influencerusername':     inf,
-            'median_est_view_count':  median_views,
-            'user_reach':             reach,
-            'core_users_reached':     len(core_users),
-            'num_posts':              num_posts
+    summary = []
+    for inf, aud in res['influencer_to_core'].items():
+        df_inf = ps[ps['influencerusername'] == inf].copy()
+        valid_inf = df_inf[df_inf['view_count'] > 0]
+        ratio = (valid_inf['view_count'] / valid_inf['like_count']).median() if not valid_inf.empty else global_ratio
+        df_inf['view_est'] = np.where(
+            df_inf['view_count'] > 0,
+            df_inf['view_count'],
+            df_inf['like_count'] * ratio
+        )
+        summary.append({
+            'influencerusername':    inf,
+            'median_est_view_count': df_inf['view_est'].median(),
+            'total_engagement':      df_inf['like_count'].sum(),
+            'user_reach':            reach_map.get(inf, 0),
+            'core_users_reached':    len(aud),
+            'num_posts':             len(df_inf)
         })
 
-    results['df_influencers'] = (
-        pd.DataFrame(influencer_summary)
-          .sort_values('user_reach', ascending=False)
-          .reset_index(drop=True)
-    )
+    df_inf = pd.DataFrame(summary).sort_values('user_reach', ascending=False).reset_index(drop=True)
+    res['df_influencers'] = df_inf
 
-    sorted_inf = sorted(inf2core.items(), key=lambda x: len(x[1]), reverse=True)
-    marg = []
-    cum = set()
+    sorted_inf = sorted(res['influencer_to_core'].items(), key=lambda x: len(x[1]), reverse=True)
+    marg, cum = [], set()
     for inf, aud in sorted_inf:
-        new_gain = len(aud - cum)
-        marg.append((inf, new_gain))
+        marg.append((inf, len(aud - cum)))
         cum |= aud
-    results['marginal_gains'] = marg
+    res['marginal_gains'] = marg
 
-    return results
+    return res
 
 @st.cache_data
-def get_analysis(ml, im, threshold):
-    return run_analysis(ml, im, threshold)
+def get_analysis(lk, ps, thr):
+    return run_analysis(lk, ps, thr)
 
-# ----------------------------
-# Streamlit UI
-# ----------------------------
-st.title("Influencer Analysis Dashboard")
+st.title("Influencer Analysis")
 
-core_threshold = st.slider(
-    "Min distinct influencer connections for core users",
-    2, 6, 2
-)
-results = get_analysis(ml_with_username, im_with_username, core_threshold)
+threshold = st.slider("Min connections for core users", 2, 6, 2)
+results = get_analysis(likers, posts, threshold)
+df_inf = results['df_influencers'].set_index('influencerusername')
 
-# Overview Metrics
 st.header("Overview Metrics")
 c1, c2, c3, c4 = st.columns(4)
-aud_est  = int(results['total_unique_audience'] / results['median_ratio'])
-core_est = int(results['total_core_users'] * results['median_ratio'])
 c1.metric("Unique Audience", results['total_unique_audience'])
-c2.metric("Audience Estimate", aud_est)
-c3.metric("Core Users Estimate", core_est)
-c4.metric("Core Audience %", f"{results['core_percentage']:.2f}%")
+c2.metric("Core Users", results['total_core_users'])
+c3.metric("Core %", f"{results['core_percentage']:.1f}%")
+c4.metric("Avg Posts", f"{df_inf['num_posts'].mean():.1f}")
 
-# Coverage Metrics with influencer names
 st.header("Coverage Metrics")
-# compute minimal sets
-half_core = results['total_core_users'] * 0.5
-full_core = results['total_core_users']
-cover50, cover100 = [], []
-cov_cum = set()
-for inf, gain in results['marginal_gains']:
-    if len(cov_cum) < half_core:
+half, full = results['total_core_users'] * 0.5, results['total_core_users']
+cover50, cover100, covered = [], [], set()
+for inf, _ in results['marginal_gains']:
+    if len(covered) < half:
         cover50.append(inf)
-    cov_cum |= results['influencer_to_core'][inf]
-# reset and get full cover
-cov_cum = set()
-for inf, gain in results['marginal_gains']:
+    covered |= results['influencer_to_core'][inf]
+covered = set()
+for inf, _ in results['marginal_gains']:
     cover100.append(inf)
-    cov_cum |= results['influencer_to_core'][inf]
-    if len(cov_cum) >= full_core:
+    covered |= results['influencer_to_core'][inf]
+    if len(covered) >= full:
         break
+st.write(f"50% coverage ({len(cover50)}): {', '.join(cover50)}")
+st.write(f"100% coverage ({len(cover100)}): {', '.join(cover100)}")
 
-st.write(f"• 50% coverage ({len(cover50)} influencers): {', '.join(cover50)}")
-st.write(f"• 100% coverage ({len(cover100)} influencers): {', '.join(cover100)}")
-
-# ----------------------------
-# Campaign Planner — two‑step flow
-# ----------------------------
 st.header("Campaign Planner")
-all_inf = results['df_influencers']['influencerusername'].tolist()
-
-# Step 1: Exclude
-if 'must_exclude' not in st.session_state:
-    st.session_state.must_exclude = []
+if 'exclude' not in st.session_state:
+    st.session_state.exclude = []
+if 'include' not in st.session_state:
+    st.session_state.include = []
 
 with st.form("exclude_form"):
-    excl = st.multiselect(
-        label="1) Exclude influencers",
-        options=all_inf,
-        default=st.session_state.must_exclude,
-        label_visibility="visible"
-    )
-    submit_excl = st.form_submit_button("Save Exclusions")
+    excl = st.multiselect("Exclude influencers", df_inf.index.tolist(), default=st.session_state.exclude)
+    if st.form_submit_button("Save"):
+        st.session_state.exclude = excl
 
-if submit_excl:
-    st.session_state.must_exclude = excl
-    st.success(f"Excluded {len(excl)} influencers")
-
-# Step 2: Include + auto‑select to target coverage
-remaining = [i for i in all_inf if i not in st.session_state.must_exclude]
-if 'must_include' not in st.session_state:
-    st.session_state.must_include = []
-
+remaining = [i for i in df_inf.index if i not in st.session_state.exclude]
 with st.form("include_form"):
-    inc = st.multiselect(
-        label="2) Must‑include influencers",
-        options=remaining,
-        default=st.session_state.must_include,
-        label_visibility="visible"
-    )
-    target_pct = st.slider(
-        "Desired core coverage (%)",
-        min_value=10, max_value=100, value=50, step=5
-    )
-    submit_inc = st.form_submit_button("Save Includes & Compute")
+    inc = st.multiselect("Include influencers", remaining, default=st.session_state.include)
+    target = st.slider("Target core coverage (%)", 10, 100, 50, 5)
+    if st.form_submit_button("Go"):
+        st.session_state.include = inc
+        needed = target / 100 * results['total_core_users']
+        sel = set(st.session_state.include)
+        covered = set().union(*(results['influencer_to_core'][i] for i in sel))
+        for inf, _ in results['marginal_gains']:
+            if inf in sel or inf in st.session_state.exclude:
+                continue
+            new_cov = len(covered | results['influencer_to_core'][inf])
+            if new_cov > len(covered):
+                sel.add(inf)
+                covered |= results['influencer_to_core'][inf]
+            if len(covered) >= needed:
+                break
+        st.session_state.auto = list(sel - set(st.session_state.include))
+        st.success(f"Auto‑selected {len(st.session_state.auto)} more")
 
-if submit_inc:
-    st.session_state.must_include = inc
-    # greedy auto‑selection
-    inf2core = results['influencer_to_core']
-    total_core = results['total_core_users']
-    needed = target_pct / 100 * total_core
-    selected = set(st.session_state.must_include)
-    covered = set().union(*(inf2core[i] for i in selected))
-    for influencer, gain in results['marginal_gains']:
-        if influencer in selected or influencer in st.session_state.must_exclude:
-            continue
-        new_cov = len(covered | inf2core[influencer])
-        if new_cov <= len(covered):
-            continue
-        selected.add(influencer)
-        covered |= inf2core[influencer]
-        if len(covered) >= needed:
-            break
-    st.session_state.auto_selected = [i for i in selected if i not in st.session_state.must_include]
-    st.success(f"Auto‑selected {len(st.session_state.auto_selected)} more to reach ~{target_pct}% coverage")
+final = list(set(st.session_state.include + st.session_state.get('auto', [])))
 
-# Build final selection
-must_excl = set(st.session_state.must_exclude)
-must_inc  = set(st.session_state.must_include)
-auto_sel  = set(st.session_state.get('auto_selected', []))
-final_selected = list(must_inc | auto_sel)
-
-# ----------------------------
-# Campaign Metrics
-# ----------------------------
 st.subheader("Campaign Metrics")
-
-# grab the DataFrame you built in run_analysis (it already has real core_users_reached)
-df_inf = results['df_influencers'].copy().set_index('influencerusername')
-
-# sum over your final_selected list
-imp_total   = int(df_inf.loc[final_selected, 'median_est_view_count'].sum())
-reach_total = int(df_inf.loc[final_selected, 'user_reach'].sum())
-core_reach  = int(df_inf.loc[final_selected, 'core_users_reached'].sum())
-core_impr   = int(imp_total * 0.3)
-
+imp = int(df_inf.loc[final, 'median_est_view_count'].sum())
+eng = int(df_inf.loc[final, 'total_engagement'].sum())
+rch = int(df_inf.loc[final, 'user_reach'].sum())
+cr  = int(df_inf.loc[final, 'core_users_reached'].sum())
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Total Impressions",          f"{imp_total:,}")
-m2.metric("Estimated Reach",            f"{reach_total:,}")
-m3.metric("Core Audience Impr. (~30%)", f"{core_impr:,}")
-m4.metric("Core Audience Reach",        f"{core_reach:,}")
+m1.metric("Total Views", f"{imp:,}")
+m2.metric("Total Engagement", f"{eng:,}")
+m3.metric("Core Impr (~30%)", f"{int(imp * 0.3):,}")
+m4.metric("Core Reach", f"{cr:,}")
 
-
-# ----------------------------
-# PyVis Network Visualization (highlight final_selected)
-# ----------------------------
-net = Network(height="800px", width="100%", bgcolor="#ffffff", font_color="black", notebook=True)
-net.barnes_hut(gravity=-20000, central_gravity=0.3, spring_length=250, spring_strength=0.001)
-
-reach_map = ml_with_username.groupby('influencerusername')['username'].nunique()
-total_aud = reach_map.sum()
-
+net = Network(height="600px", width="100%", notebook=True)
+reach_map = likers.groupby('influencerusername')['username'].nunique()
 for inf in sampled_pairs['influencerusername'].unique():
-    r   = reach_map.get(inf, 0)
-    sz  = 20 + 2 * math.sqrt(r)
-    # only show label if selected
-    lbl = inf if inf in final_selected else ""
-    clr = "green" if inf in final_selected else "gray"
-    net.add_node(inf, label=lbl, title=f"{inf}: {r} users", size=sz, color=clr)
+    r = reach_map.get(inf, 0)
+    size = 20 + 2 * math.sqrt(r)
+    label = inf if inf in final else ""
+    color = "green" if inf in final else "gray"
+    net.add_node(inf, label=label, title=str(r), size=size, color=color)
 
-# audience groups
-aud = (sampled_pairs.groupby('username')['influencerusername']
-       .apply(lambda x: frozenset(x)).reset_index(name='influencers_set'))
-aud = aud.groupby('influencers_set')['username'].apply(list).reset_index(name='audience_list')
-aud['group_id'] = aud.index.map(lambda i: f"Group_{i}")
-
-for _, row in aud.iterrows():
-    size = 5 + 10 * math.log(len(row['audience_list']) + 1)
-    net.add_node(row['group_id'], label=str(len(row['audience_list'])),
-                 title=f"Size: {len(row['audience_list'])}", size=size, color="lightblue")
-
-for _, row in aud.iterrows():
-    w = 1 + math.log(len(row['audience_list']) + 1)
-    for inf in row['influencers_set']:
-        clr = "rgba(0,0,0,0.2)"
-        net.add_edge(row['group_id'], inf, width=w, color=clr)
-
-graph_html = net.generate_html(notebook=True)
-components.html(graph_html, height=850, scrolling=True)
-
-# ----------------------------
-# Influencer Detail Table
-# ----------------------------
-st.header("Influencer Details")
-detail_df = results['df_influencers'].copy()
-detail_df['Selected'] = detail_df['influencerusername'].isin(final_selected)
-
-st.dataframe(
-    detail_df.rename(columns={
-        'influencerusername':  'Influencer',
-        'user_reach':          'Reach',
-        'core_users_reached':  'Core Users Reached',
-        'median_est_view_count':'Median Views',
-        'num_posts':           'Num Posts'
-    })[[
-        'Influencer','Reach','Core Users Reached','Median Views','Num Posts','Selected'
-    ]],
-    use_container_width=True
+aud = (
+    sampled_pairs
+    .groupby('username')['influencerusername']
+    .apply(lambda x: frozenset(x))
+    .reset_index(name='inf_set')
 )
-st.subheader("Raw Influencer Data")
-st.dataframe(df_inf)
+aud = aud.groupby('inf_set')['username'].apply(list).reset_index(name='users')
+aud['id'] = aud.index.map(lambda i: f"G{i}")
 
-# ----------------------------
-# Debug: inspect core_reach calculation
-# ----------------------------
-st.subheader("Debug Core Reach Calculation")
+for _, row in aud.iterrows():
+    sz = 5 + 10 * math.log(len(row['users']) + 1)
+    net.add_node(row['id'], label=str(len(row['users'])), size=sz, color="lightblue")
+    w = 1 + math.log(len(row['users']) + 1)
+    for inf in row['inf_set']:
+        net.add_edge(row['id'], inf, width=w, color="rgba(0,0,0,0.2)")
 
-# 1) Show which influencers are in final_selected
-st.write("Final selected influencers:", final_selected)
+html = net.generate_html(notebook=True)
+components.html(html, height=650)
 
-# 2) Extract their core_users_reached values
-core_series = df_inf.loc[final_selected, 'core_users_reached']
-st.write("Series of core_users_reached for each influencer:")
-st.dataframe(core_series.to_frame(name="core_users_reached"))
-
-# 3) Print each one line by line
-for inf, val in core_series.items():
-    st.write(f"- {inf}: {val}")
-
-# 4) Show the sum operation explicitly
-core_sum = core_series.sum()
-st.write("Sum of all above values (core_reach):", core_sum)
-
-# 5) (Re‑assign core_reach for rest of your app)
-core_reach = int(core_sum)
-
-
+st.header("Influencer Details")
+detail = df_inf.reset_index().rename(columns={
+    'median_est_view_count': 'Median Views',
+    'total_engagement':      'Engagement',
+    'user_reach':            'Reach',
+    'core_users_reached':    'Core Users',
+    'num_posts':             'Posts'
+})
+detail['Selected'] = detail['influencerusername'].isin(final)
+st.dataframe(detail, use_container_width=True)
