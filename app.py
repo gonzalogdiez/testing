@@ -225,4 +225,3 @@ detail = df_inf.reset_index().rename(columns={
 })
 detail['Selected'] = detail['influencerusername'].isin(final)
 st.dataframe(detail, use_container_width=True)
-```
