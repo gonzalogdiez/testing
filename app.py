@@ -58,20 +58,17 @@ sampled_pairs = sample_pairs(likers)
 
 def run_analysis(lk, ps, threshold):
     res = {}
-    # total unique audience
     res['total_unique_audience'] = lk['username'].nunique()
-    # core users
     uic = lk.groupby('username')['influencerusername'].nunique()
     core_idx = uic[uic >= threshold].index
     res['total_core_users'] = len(core_idx)
-    res['core_percentage'] = len(core_idx) / res['total_unique_audience'] * 100
+    res['core_percentage'] = int(len(core_idx) / res['total_unique_audience'] * 100)
     res['influencer_to_core'] = {
         inf: set(grp['username']).intersection(core_idx)
         for inf, grp in lk.groupby('influencerusername')
     }
     reach_map = lk.groupby('influencerusername')['username'].nunique().to_dict()
 
-    # global fallback ratio
     valid_all = ps[ps['view_count'] > 0]
     global_ratio = (valid_all['view_count'] / valid_all['like_count']).median()
 
@@ -87,8 +84,8 @@ def run_analysis(lk, ps, threshold):
         )
         summary.append({
             'influencerusername':    inf,
-            'median_est_view_count': df_inf['view_est'].median(),
-            'total_engagement':      int(df_inf['like_count'].sum()),
+            'median_est_view_count': int(df_inf['view_est'].median()),
+            'median_engagement':     int(df_inf['like_count'].median()),
             'user_reach':            reach_map.get(inf, 0),
             'core_users_reached':    len(core_set),
             'num_posts':             len(df_inf)
@@ -97,7 +94,6 @@ def run_analysis(lk, ps, threshold):
     df_inf = pd.DataFrame(summary).sort_values('user_reach', ascending=False).reset_index(drop=True)
     res['df_influencers'] = df_inf
 
-    # marginal gains
     sorted_inf = sorted(res['influencer_to_core'].items(), key=lambda x: len(x[1]), reverse=True)
     marg, cum = [], set()
     for inf, aud in sorted_inf:
@@ -122,8 +118,8 @@ st.header("Overview Metrics")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Unique Audience", results['total_unique_audience'])
 c2.metric("Core Users", results['total_core_users'])
-c3.metric("Core %", f"{results['core_percentage']:.1f}%")
-c4.metric("Avg Posts", f"{df_inf['num_posts'].mean():.1f}")
+c3.metric("Core %", f"{results['core_percentage']}%")
+c4.metric("Avg Posts", f"{int(df_inf['num_posts'].mean())}")
 
 # Coverage Metrics
 st.header("Coverage Metrics")
@@ -176,12 +172,12 @@ final = list(set(st.session_state.include + st.session_state.get('auto', [])))
 # Campaign Metrics
 st.subheader("Campaign Metrics")
 imp = int(df_inf.loc[final, 'median_est_view_count'].sum())
-eng = int(df_inf.loc[final, 'total_engagement'].sum())
+eng = int(df_inf.loc[final, 'median_engagement'].sum())
 rch = int(df_inf.loc[final, 'user_reach'].sum())
 cr  = int(df_inf.loc[final, 'core_users_reached'].sum())
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Total Views", f"{imp:,}")
-m2.metric("Total Engagement", f"{eng:,}")
+m2.metric("Median Engagement", f"{eng:,}")
 m3.metric("Core Impr (~30%)", f"{int(imp*0.3):,}")
 m4.metric("Core Reach", f"{cr:,}")
 
@@ -218,7 +214,7 @@ components.html(html, height=650)
 st.header("Influencer Details")
 detail = df_inf.reset_index().rename(columns={
     'median_est_view_count':'Median Views',
-    'total_engagement':'Engagement',
+    'median_engagement':'Median Engagement',
     'user_reach':'Reach',
     'core_users_reached':'Core Users',
     'num_posts':'Posts'
