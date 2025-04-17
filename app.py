@@ -161,61 +161,66 @@ st.write("• 50% coverage → 3 influencers")
 st.write("• 100% coverage → 5 influencers")
 
 # ----------------------------
-# Campaign Planner — form + exclusivity on submit
+# Campaign Planner — 3‑box multiselect UI
 # ----------------------------
 st.header("Campaign Planner")
-st.subheader("Influencer Network Table")
-st.caption("Select Include/Exclude, then click **Update Selections**.")
+st.subheader("Influencer Selection")
+st.caption("Drag names from the middle into Exclude (left) or Include (right). The ones remaining in the center are Optional.")
 
-# init session-state table
-if 'campaign_df' not in st.session_state:
-    df0 = results['df_influencers'].copy()
-    mg_df = pd.DataFrame(results['marginal_gains'], columns=['influencerusername','marginal_users_added'])
-    df0 = df0.merge(mg_df, on='influencerusername', how='left')
-    df0['core_users_reached'] = (df0['user_reach'] * results['median_ratio']).astype(int)
-    df0['Include in Network']     = False
-    df0['Exclude from Analysis']  = False
-    st.session_state['campaign_df'] = df0
+# pull the full list of influencers
+all_inf = results['df_influencers']['influencerusername'].tolist()
 
-editable_cols = [
-    'Include in Network','Exclude from Analysis',
-    'influencerusername','median_est_view_count',
-    'core_users_reached','marginal_users_added'
-]
-renamed_cols = {
-    'influencerusername':'Influencer',
-    'median_est_view_count':'Median Views',
-    'core_users_reached':'Core Users Reached',
-    'marginal_users_added':'Marginal Core Users Added'
-}
+# initialize session_state lists if needed
+if 'must_exclude' not in st.session_state: st.session_state.must_exclude = []
+if 'optional'    not in st.session_state: st.session_state.optional    = all_inf.copy()
+if 'must_include' not in st.session_state: st.session_state.must_include = []
 
-with st.form("campaign_selection"):
-    edited = st.data_editor(
-        st.session_state['campaign_df'][editable_cols].rename(columns=renamed_cols),
-        use_container_width=True,
-        num_rows="fixed",
-        disabled=['Influencer','Median Views','Core Users Reached','Marginal Core Users Added'],
-        key="editor_table"
+# three columns for the lists
+col_exc, col_mid, col_inc = st.columns(3)
+
+with col_exc:
+    st.markdown("**Exclude**")
+    must_exclude = st.multiselect(
+        label="",
+        options=all_inf,
+        default=st.session_state.must_exclude,
+        key="sel_exclude"
     )
-    submitted = st.form_submit_button("Update Selections")
 
-if submitted:
-    # map back original names
-    real = edited.rename(columns={v:k for k,v in renamed_cols.items()})
-    # enforce "not both checked" rule
-    real['Exclude from Analysis'] = real.apply(
-        lambda r: False if (r['Include in Network'] and r['Exclude from Analysis']) else r['Exclude from Analysis'], axis=1
-    )
-    real['Include in Network'] = real.apply(
-        lambda r: False if (r['Include in Network'] and r['Exclude from Analysis']) else r['Include in Network'], axis=1
-    )
-    for col in ['Include in Network','Exclude from Analysis']:
-        st.session_state['campaign_df'][col] = real[col]
-    st.success("Selections updated!")
+# recompute remaining after exclude
+remaining = [x for x in all_inf if x not in must_exclude]
 
-if st.button("Reset Influencer Selections"):
-    st.session_state['campaign_df']['Include in Network']    = False
-    st.session_state['campaign_df']['Exclude from Analysis'] = False
+with col_mid:
+    st.markdown("**Optional**")
+    optional = st.multiselect(
+        label="",
+        options=remaining,
+        default=[x for x in st.session_state.optional if x in remaining],
+        key="sel_optional"
+    )
+
+# recompute available for include
+available_for_include = [x for x in remaining if x not in optional]
+
+with col_inc:
+    st.markdown("**Include**")
+    must_include = st.multiselect(
+        label="",
+        options=available_for_include,
+        default=[x for x in st.session_state.must_include if x in available_for_include],
+        key="sel_include"
+    )
+
+# persist back to session_state
+st.session_state.must_exclude = must_exclude
+st.session_state.optional    = optional
+st.session_state.must_include = must_include
+
+# now you can compute your final “selected” influencers however you like:
+final_selected = must_include + optional
+
+# and your final “dropped” (excluded) list is must_exclude
+
 
 # ----------------------------
 # Campaign Metrics
