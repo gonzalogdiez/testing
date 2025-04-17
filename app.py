@@ -342,4 +342,6 @@ st.dataframe(
     ]],
     use_container_width=True
 )
+st.subheader("Raw Influencer Data")
+st.dataframe(df_inf)
 
