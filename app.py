@@ -33,15 +33,12 @@ likers['pk']     = likers['pk'].astype(str)
 posts = (
     posts
     .merge(users, left_on='user_id', right_on='pk', how='left', suffixes=('','_user'))
-    .rename(columns={
-        'play_count':'view_count',
-        'username':'influencerusername'
-    })
+    .rename(columns={'play_count':'view_count','username':'influencerusername'})
 )
 
-likers = (
-    likers
-    .merge(posts[['pk','influencerusername']], left_on='media_id', right_on='pk', how='left')
+likers = likers.merge(
+    posts[['pk','influencerusername']],
+    left_on='media_id', right_on='pk', how='left'
 )
 likers.dropna(subset=['influencerusername'], inplace=True)
 
@@ -107,8 +104,8 @@ def run_analysis(lk, ps, threshold):
 def get_analysis(lk, ps, thr):
     return run_analysis(lk, ps, thr)
 
-# Streamlit UI
 st.title("Influencer Analysis Dashboard")
+
 threshold = st.slider("Min connections for core users", 2, 6, 2)
 results = get_analysis(likers, posts, threshold)
 df_inf = results['df_influencers'].set_index('influencerusername')
@@ -120,6 +117,13 @@ c1.metric("Unique Audience", results['total_unique_audience'])
 c2.metric("Core Users", results['total_core_users'])
 c3.metric("Core %", f"{results['core_percentage']}%")
 c4.metric("Avg Posts", f"{int(df_inf['num_posts'].mean())}")
+
+# Check for unusually low median engagement
+low_eng = df_inf[df_inf['median_engagement'] < 5]
+if not low_eng.empty:
+    st.subheader("⚠️ Low Median Engagement Alerts")
+    st.write("The following influencers have median engagement below 5 likes per post:")
+    st.dataframe(low_eng['median_engagement'])
 
 # Coverage Metrics
 st.header("Coverage Metrics")
@@ -181,43 +185,58 @@ m2.metric("Median Engagement", f"{eng:,}")
 m3.metric("Core Impr (~30%)", f"{int(imp * 0.3):,}")
 m4.metric("Core Reach", f"{cr:,}")
 
-# PyVis Network
-net = Network(height="600px", width="100%", notebook=True)
+# PyVis Network Visualization
+net = Network(height="800px", width="100%", bgcolor="#ffffff", font_color="black", notebook=True)
+net.barnes_hut(gravity=-20000, central_gravity=0.3, spring_length=250, spring_strength=0.001)
+
 reach_map = likers.groupby('influencerusername')['username'].nunique()
 for inf in sampled_pairs['influencerusername'].unique():
     r = reach_map.get(inf, 0)
-    size = 20 + 2 * math.sqrt(r)
-    label = inf if inf in final else ""
-    color = "green" if inf in final else "gray"
-    net.add_node(inf, label=label, title=str(r), size=size, color=color)
+    sz = 20 + 2 * math.sqrt(r)
+    # always show label
+    net.add_node(
+        inf,
+        label=inf,
+        title=f"{inf}: {r} users",
+        size=sz,
+        color="green" if inf in final else "gray"
+    )
 
 aud = (
     sampled_pairs
     .groupby('username')['influencerusername']
-    .apply(frozenset)
+    .apply(lambda x: frozenset(x))
     .reset_index(name='inf_set')
 )
-aud = aud.groupby('inf_set')['username'].apply(list).reset_index(name='users')
-aud['id'] = aud.index.map(lambda i: f"G{i}")
+aud = aud.groupby('inf_set')['username'].apply(list).reset_index(name='audience_list')
+aud['group_id'] = aud.index.map(lambda i: f"Group_{i}")
 
 for _, row in aud.iterrows():
-    sz = 5 + 10 * math.log(len(row['users'])+1)
-    net.add_node(row['id'], label=str(len(row['users'])), size=sz, color="lightblue")
-    w = 1 + math.log(len(row['users'])+1)
+    size = 5 + 10 * math.log(len(row['audience_list']) + 1)
+    net.add_node(
+        row['group_id'],
+        label=str(len(row['audience_list'])),
+        title=f"Size: {len(row['audience_list'])}",
+        size=size,
+        color="lightblue"
+    )
+
+for _, row in aud.iterrows():
+    width = 1 + math.log(len(row['audience_list']) + 1)
     for inf in row['inf_set']:
-        net.add_edge(row['id'], inf, width=w, color="rgba(0,0,0,0.2)")
+        net.add_edge(row['group_id'], inf, width=width, color="rgba(0,0,0,0.2)")
 
 html = net.generate_html(notebook=True)
-components.html(html, height=650)
+components.html(html, height=850, scrolling=True)
 
 # Influencer Details
 st.header("Influencer Details")
 detail = df_inf.reset_index().rename(columns={
-    'median_est_view_count':'Median Views',
-    'median_engagement':'Median Engagement',
-    'user_reach':'Reach',
-    'core_users_reached':'Core Users',
-    'num_posts':'Posts'
+    'median_est_view_count': 'Median Views',
+    'median_engagement':      'Median Engagement',
+    'user_reach':             'Reach',
+    'core_users_reached':     'Core Users',
+    'num_posts':              'Num Posts'
 })
 detail['Selected'] = detail['influencerusername'].isin(final)
 st.dataframe(detail, use_container_width=True)
