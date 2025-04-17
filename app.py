@@ -108,7 +108,7 @@ def run_analysis(ml, im, threshold=2):
     results['median_ratio'] = med_ratio
     im['view_count_est'] = im['view_count'].fillna(im['like_count'] * med_ratio)
 
-        influencer_summary = []
+    influencer_summary = []
     # pre‐compute total reach per influencer
     total_reach_map = ml_with_username.groupby('influencerusername')['username']\
                                       .nunique().to_dict()
