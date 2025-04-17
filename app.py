@@ -178,7 +178,7 @@ cr  = int(df_inf.loc[final, 'core_users_reached'].sum())
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Total Views", f"{imp:,}")
 m2.metric("Median Engagement", f"{eng:,}")
-m3.metric("Core Impr (~30%)", f"{int(imp*0.3):,}")
+m3.metric("Core Impr (~30%)", f"{int(imp * 0.3):,}")
 m4.metric("Core Reach", f"{cr:,}")
 
 # PyVis Network
