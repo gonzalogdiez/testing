@@ -243,3 +243,5 @@ detail = df_inf.reset_index().rename(columns={
 })
 detail['Selected'] = detail['influencerusername'].isin(final)
 st.dataframe(detail, use_container_width=True)
+for post_id, likes, inf in zip(posts['pk'], posts['like_count'], posts['influencerusername']):
+    st.write(f"Post {post_id} by {inf}: {likes} likes")
