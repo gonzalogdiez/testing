@@ -121,14 +121,7 @@ c1.metric("Unique Audience", results['total_unique_audience'])
 c2.metric("Core Users", results['total_core_users'])
 c3.metric("Core %", f"{results['core_percentage']}%")
 c4.metric("Avg Posts", f"{int(df_inf['num_posts'].mean())}")
-'''
-# Alert for low median engagement
-low_eng = df_inf[df_inf['median_engagement'] < 5]
-if not low_eng.empty:
-    st.subheader("⚠️ Low Engagement Alert")
-    st.write("Influencers with median engagement < 5:")
-    st.dataframe(low_eng['median_engagement'])
-'''
+
 # Coverage Metrics
 st.header("Coverage Metrics")
 half, full = results['total_core_users'] * 0.5, results['total_core_users']
@@ -241,8 +234,4 @@ detail = df_inf.reset_index().rename(columns={
     'core_users_reached':     'Core Users',
     'num_posts':              'Num Posts'
 })
-'''detail['Selected'] = detail['influencerusername'].isin(final)
-st.dataframe(detail, use_container_width=True)
-for post_id, likes, inf in zip(posts['pk'], posts['like_count'], posts['influencerusername']):
-    st.write(f"Post {post_id} by {inf}: {likes} likes")
-'''
+
