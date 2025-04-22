@@ -234,4 +234,6 @@ detail = df_inf.reset_index().rename(columns={
     'core_users_reached':     'Core Users',
     'num_posts':              'Num Posts'
 })
+detail['Selected'] = detail['influencerusername'].isin(final)
+st.dataframe(detail, use_container_width=True)
 
