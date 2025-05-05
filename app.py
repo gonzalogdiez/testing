@@ -11,7 +11,7 @@ from pyvis.network import Network
 @st.cache_data
 def load_data():
     os.makedirs("raw", exist_ok=True)
-    url = "https://drive.google.com/uc?export=download&id=1WvkdezotvWru3157q6YKDkdUQuXgUQ6O"
+    url = "https://drive.google.com/uc?export=download&id=1X7uhjXNr7al2IBx-enLQT-ZEX6Ss3gU7"
     path = "raw/data.json"
     if not os.path.exists(path):
         gdown.download(url, path, quiet=False)
