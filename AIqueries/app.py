@@ -8,7 +8,7 @@ st.title("Ask Questions About Our Data")
 st.markdown(
     """
     <div style="font-size:0.9em;color:#555;">
-    **Please note:** This application is powered by a curated sample of 100 credit-union records for demonstration and testing purposes only. Results may differ when connected to the full dataset.
+    Please note: This application is powered by a curated sample of 100 credit-union records for demonstration and testing purposes only.
     </div>
     """,
     unsafe_allow_html=True
@@ -20,7 +20,7 @@ client  = OpenAI(api_key=api_key)
 
 # 2. Load the Excel file from disk
 df = pd.read_excel("AIqueries/data/data.xlsx", engine="openpyxl")
-st.write("Preview of your data:")
+st.write("Preview of the Credit Union data:")
 st.dataframe(df.head())
 
 # 3. Ask question
