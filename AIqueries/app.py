@@ -10,7 +10,7 @@ api_key = st.secrets["OPENAI_API_KEY"]
 client  = OpenAI(api_key=api_key)
 
 # 2. Load the Excel file from disk
-df = pd.read_excel("data/data.xlsx", engine="openpyxl")
+df = pd.read_excel("AIqueries/data/data.xlsx", engine="openpyxl")
 st.write("Preview of your data:")
 st.dataframe(df.head())
 
