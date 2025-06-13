@@ -5,7 +5,8 @@ import json
 from collections import Counter
 
 # New style v1 client
-from openai import OpenAI, error as OpenAIError
+from openai import OpenAI
+from openai.error import OpenAIError
 
 # ─── Configuration & Secrets ────────────────────────────────────────────────
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
