@@ -4,49 +4,63 @@ import re
 import json
 from collections import Counter
 
-# ─── New OpenAI v1 client import ─────────────────────────────────────────────
-from openai import OpenAI
+# New style v1 client
+from openai import OpenAI, error as OpenAIError
 
 # ─── Configuration & Secrets ────────────────────────────────────────────────
-# In ~/.streamlit/secrets.toml:
-# [secrets]
-# OPENAI_API_KEY = "sk-…"
-# APIFY_BASE_URL = "http://167.99.6.240:8002"
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 APIFY_BASE_URL = st.secrets["APIFY_BASE_URL"]
 
-# Sidebar settings
 st.sidebar.header("Settings")
 RESULTS_LIMIT = st.sidebar.slider("Top media per hashtag", 5, 50, 20)
 
 HASHTAG_RE = re.compile(r"#(\w+)")
 
 def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
+    """
+    Calls OpenAI to generate seed hashtags.
+    Catches any API errors and shows them in Streamlit.
+    Falls back to gpt-3.5-turbo if gpt-4o-mini fails.
+    """
     prompt = (
         f"Generate 8–10 hashtags for a brand about “{brand}”, "
         f"interested in “{topic}” and targeting the “{market}” market. "
         "Return them as a JSON array of strings."
     )
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.7,
-        max_tokens=150,
-    )
-    content = resp.choices[0].message.content.strip()
-    try:
-        tags = json.loads(content)
-        if isinstance(tags, list):
-            return tags
-    except json.JSONDecodeError:
-        st.error("OpenAI did not return valid JSON:\n" + content)
+
+    for model in ("gpt-4o-mini", "gpt-3.5-turbo"):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role":"user","content":prompt}],
+                temperature=0.7,
+                max_tokens=150,
+            )
+            content = resp.choices[0].message.content.strip()
+            tags = json.loads(content)
+            if isinstance(tags, list):
+                return tags
+            st.error(f"OpenAI returned non-list JSON when using {model}: {content}")
+            return []
+        except OpenAIError as oe:
+            st.warning(f"OpenAI model {model} error: {oe}")
+        except json.JSONDecodeError:
+            st.error(f"Failed to parse JSON from OpenAI {model} response:\n{content}")
+            return []
+        except Exception as e:
+            st.error(f"Unexpected error with OpenAI {model}: {e}")
+
+    # If we exhausted both models
+    st.error("All OpenAI attempts failed. Check your API key, model access, and network.")
     return []
 
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
-    payload = {"hashtags": hashtags, "results_limit": RESULTS_LIMIT}
     try:
-        url = f"{APIFY_BASE_URL}/hashtags/top-media"
-        r = requests.post(url, json=payload)
+        r = requests.post(
+            f"{APIFY_BASE_URL}/hashtags/top-media",
+            json={"hashtags": hashtags, "results_limit": RESULTS_LIMIT},
+            timeout=30
+        )
         r.raise_for_status()
         return r.json().get("media", [])
     except Exception as e:
@@ -83,23 +97,27 @@ if st.button("Generate Initial Hashtags"):
     if topic and brand and market:
         st.session_state.initial = generate_initial_hashtags(topic,brand,market)
     else:
-        st.warning("Fill in all three fields.")
+        st.warning("Please fill in Topic, Brand, and Market.")
 
 # Step 2
 if "initial" in st.session_state:
     st.header("Step 2: Confirm Seed Hashtags")
-    sel = st.multiselect("Select hashtags to keep",
-                         options=st.session_state.initial,
-                         default=st.session_state.initial)
+    sel = st.multiselect(
+        "Select hashtags to keep",
+        options=st.session_state.initial,
+        default=st.session_state.initial
+    )
     if st.button("Enrich Hashtags"):
         st.session_state.enriched = enrich_hashtags(sel)
 
 # Step 3
 if "enriched" in st.session_state:
     st.header("Step 3: Select Final Hashtags")
-    final_sel = st.multiselect("Pick your final hashtags",
-                               options=st.session_state.enriched,
-                               default=st.session_state.enriched)
+    final_sel = st.multiselect(
+        "Pick your final hashtags",
+        options=st.session_state.enriched,
+        default=st.session_state.enriched
+    )
     if st.button("Finalize"):
         st.session_state.final = final_sel
 
