@@ -1,6 +1,3 @@
-
-# streamlit_app.py
-
 import streamlit as st
 import requests
 import re
@@ -9,7 +6,7 @@ from collections import Counter
 from openai import OpenAI
 
 # ─── Configuration & Secrets ────────────────────────────────────────────────
-# Make sure you have a ~/.streamlit/secrets.toml:
+# ~/.streamlit/secrets.toml should contain:
 # [secrets]
 # OPENAI_API_KEY = "sk-..."
 # APIFY_BASE_URL = "http://167.99.6.240:8002"
@@ -26,13 +23,14 @@ HASHTAG_RE = re.compile(r"#(\w+)")
 def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
     """
     Step 1: Call OpenAI to generate 8–10 seed hashtags.
-    Tries gpt-4o-mini, then gpt-3.5-turbo on failure, and surfaces errors.
+    Strips any surrounding markdown/text so we can json.loads the array.
     """
     prompt = (
         f"Generate 8–10 hashtags for a brand about “{brand}”, "
         f"interested in “{topic}” and targeting the “{market}” market. "
-        "Return them as a JSON array of strings."
+        "Return them *only* as a JSON array of strings—no extra text or markdown fences."
     )
+    # Try both models
     for model in ("gpt-4o-mini", "gpt-3.5-turbo"):
         try:
             resp = client.chat.completions.create(
@@ -41,18 +39,28 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
                 temperature=0.7,
                 max_tokens=150,
             )
-            content = resp.choices[0].message.content.strip()
-            tags = json.loads(content)
+            raw = resp.choices[0].message.content
+
+            # Extract the JSON array between the first '[' and last ']'
+            start = raw.find("[")
+            end   = raw.rfind("]")
+            if start == -1 or end == -1:
+                st.error(f"No JSON array found in {model} response.")
+                continue
+
+            snippet = raw[start : end + 1]
+            tags = json.loads(snippet)
             if isinstance(tags, list):
                 return tags
-            st.error(f"OpenAI returned non-list JSON with {model}:\n{content}")
+            st.error(f"Parsed JSON is not a list (model {model}):\n{snippet}")
             return []
         except json.JSONDecodeError:
-            st.error(f"Could not parse JSON from {model}'s response:\n{resp.choices[0].message.content}")
+            st.error(f"Failed to parse JSON from {model}:\n{snippet}")
             return []
         except Exception as e:
             st.warning(f"OpenAI error with {model}: {e}")
-    st.error("All OpenAI attempts failed. Check your API key and model access.")
+
+    st.error("All OpenAI attempts failed. Check your key & model access.")
     return []
 
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
@@ -60,11 +68,10 @@ def fetch_top_media(hashtags: list[str]) -> list[dict]:
     Step 2: Call Apify endpoint to fetch top media for those hashtags.
     """
     try:
-        url = f"{APIFY_BASE_URL}/hashtags/top-media"
         r = requests.post(
-            url,
+            f"{APIFY_BASE_URL}/hashtags/top-media",
             json={"hashtags": hashtags, "results_limit": RESULTS_LIMIT},
-            timeout=30
+            timeout=30,
         )
         r.raise_for_status()
         return r.json().get("media", [])
