@@ -66,18 +66,42 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
     """
     Step 2: Call Apify endpoint to fetch top media for those hashtags.
+    Added debug logging and fallback on alternate keys.
     """
+    payload = {"hashtags": hashtags, "results_limit": RESULTS_LIMIT}
+    url = f"{APIFY_BASE_URL}/hashtags/top-media"
     try:
-        r = requests.post(
-            f"{APIFY_BASE_URL}/hashtags/top-media",
-            json={"hashtags": hashtags, "results_limit": RESULTS_LIMIT},
-            timeout=30,
-        )
-        r.raise_for_status()
-        return r.json().get("media", [])
+        # DEBUG: show what we’re about to call
+        st.write(f"▶️ POST {url}  payload={payload}")
+        r = requests.post(url, json=payload, timeout=30)
+        st.write(f"⏪ Status: {r.status_code}")
+        data = r.json()
+        st.write("⏪ Raw response keys:", list(data.keys()))
+        # first try the 'media' key, then 'results' or 'items'
+        media = data.get("media") or data.get("results") or data.get("items") or []
+        st.write(f"▶️ Returning {len(media)} media items")
+        return media
     except Exception as e:
         st.error(f"Error fetching top media: {e}")
         return []
+
+
+# Step 2: Confirm Seeds & Enrich
+if "initial" in st.session_state:
+    st.header("Step 2: Confirm Seed Hashtags")
+    selected_initial = st.multiselect(
+        "Select hashtags to keep",
+        options=st.session_state.initial,
+        default=st.session_state.initial
+    )
+    # give this button its own key so Streamlit won’t confuse it
+    if st.button("Enrich Hashtags", key="enrich_button"):
+        # DEBUG: show what seeds we’re enriching
+        st.write("🔍 Enriching seeds:", selected_initial)
+        enriched = enrich_hashtags(selected_initial)
+        st.write(f"🔍 Got {len(enriched)} suggestions")
+        st.session_state.enriched = enriched
+
 
 def extract_hashtags_from_media(media_list: list[dict]) -> list[str]:
     """
