@@ -59,24 +59,44 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
     return []
 
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
+    """
+    Step 2: Call Apify endpoint to fetch top media for those hashtags.
+    Normalizes tags to lowercase, adds Accept header, and prints the raw response.
+    """
     url = f"{APIFY_BASE_URL}/hashtags/top-media"
+    # 1) strip leading “#” and lowercase
+    clean_tags = [h.lstrip("#").lower() for h in hashtags]
+    payload    = {"hashtags": clean_tags, "results_limit": RESULTS_LIMIT}
+    headers    = {"accept": "application/json"}
 
-    # strip the leading '#' so the curl body is just plain names
-    clean_tags = [h.lstrip("#") for h in hashtags]
-
-    payload = {"hashtags": clean_tags, "results_limit": RESULTS_LIMIT}
     try:
-        st.write(f"▶️ POST {url} payload={payload}")
-        r = requests.post(url, json=payload, timeout=30)
-        st.write(f"⏪ Status: {r.status_code}")
-        data = r.json()
-        st.write("⏪ Keys:", list(data.keys()))
+        st.write(f"▶️ POST {url}")
+        st.write(f"   payload={payload}")
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
+        st.write(f"⏪ Status code: {r.status_code}")
+
+        raw = r.text or ""
+        # show first 500 chars of the raw body
+        st.write("⏪ Raw response:", raw[:500] + ("..." if len(raw)>500 else ""))
+
+        # now try to parse JSON
+        data = r.json()  
+        st.write("⏪ Parsed top‐level keys:", list(data.keys()))
+
+        # find your list under any likely key
         media = data.get("media") or data.get("results") or data.get("items") or []
-        st.write(f"▶️ Returning {len(media)} media items")
+        st.write(f"▶️ Returning {len(media)} items")
         return media
+
+    except json.JSONDecodeError as jde:
+        st.error(f"JSON decode error: {jde}")
+        st.error(f"Response text was:\n{raw}")
+        return []
+
     except Exception as e:
         st.error(f"Error fetching top media: {e}")
         return []
+
 
 def extract_hashtags_from_media(media_list: list[dict]) -> list[str]:
     out = []
