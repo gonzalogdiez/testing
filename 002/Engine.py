@@ -40,7 +40,6 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
                 max_tokens=150
             )
             raw = resp.choices[0].message.content
-            # extract array substring
             start, end = raw.find("["), raw.rfind("]")
             if start == -1 or end == -1:
                 st.error(f"No JSON array found in {model} response.")
@@ -61,7 +60,11 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
 
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
     url = f"{APIFY_BASE_URL}/hashtags/top-media"
-    payload = {"hashtags": hashtags, "results_limit": RESULTS_LIMIT}
+
+    # strip the leading '#' so the curl body is just plain names
+    clean_tags = [h.lstrip("#") for h in hashtags]
+
+    payload = {"hashtags": clean_tags, "results_limit": RESULTS_LIMIT}
     try:
         st.write(f"▶️ POST {url} payload={payload}")
         r = requests.post(url, json=payload, timeout=30)
