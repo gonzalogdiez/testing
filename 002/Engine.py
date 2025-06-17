@@ -60,42 +60,43 @@ def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
 
 def fetch_top_media(hashtags: list[str]) -> list[dict]:
     """
-    Step 2: Call Apify endpoint to fetch top media for those hashtags.
-    Normalizes tags to lowercase, adds Accept header, and prints the raw response.
+    Call Apify and flatten the `top_media` arrays inside each result.
     """
-    url = f"{APIFY_BASE_URL}/hashtags/top-media"
-    # 1) strip leading “#” and lowercase
+    url        = f"{APIFY_BASE_URL}/hashtags/top-media"
     clean_tags = [h.lstrip("#").lower() for h in hashtags]
     payload    = {"hashtags": clean_tags, "results_limit": RESULTS_LIMIT}
     headers    = {"accept": "application/json"}
 
+    st.write(f"▶️ POST {url} payload={payload}")
+    r = requests.post(url, json=payload, headers=headers, timeout=30)
+    st.write(f"⏪ Status code: {r.status_code}")
+    raw = r.text or ""
+    st.write("⏪ Raw response:", raw[:500] + ("..." if len(raw)>500 else ""))
+
+    data = {}
     try:
-        st.write(f"▶️ POST {url}")
-        st.write(f"   payload={payload}")
-        r = requests.post(url, json=payload, headers=headers, timeout=30)
-        st.write(f"⏪ Status code: {r.status_code}")
-
-        raw = r.text or ""
-        # show first 500 chars of the raw body
-        st.write("⏪ Raw response:", raw[:500] + ("..." if len(raw)>500 else ""))
-
-        # now try to parse JSON
-        data = r.json()  
-        st.write("⏪ Parsed top‐level keys:", list(data.keys()))
-
-        # find your list under any likely key
-        media = data.get("media") or data.get("results") or data.get("items") or []
-        st.write(f"▶️ Returning {len(media)} items")
-        return media
-
-    except json.JSONDecodeError as jde:
-        st.error(f"JSON decode error: {jde}")
-        st.error(f"Response text was:\n{raw}")
-        return []
-
+        data = r.json()
     except Exception as e:
-        st.error(f"Error fetching top media: {e}")
+        st.error(f"JSON decode error: {e}")
         return []
+
+    st.write("⏪ Parsed top‐level keys:", list(data.keys()))
+
+    media_items = []
+    # 1) If there's a top‐level "media", use it
+    if "media" in data:
+        media_items = data["media"]
+    # 2) Otherwise, if there's "results", flatten top_media
+    elif "results" in data:
+        for entry in data["results"]:
+            # each entry should have its own list under "top_media"
+            media_items += entry.get("top_media", [])
+    # 3) Fallback on "items"
+    elif "items" in data:
+        media_items = data["items"]
+
+    st.write(f"▶️ Returning {len(media_items)} media items")
+    return media_items
 
 
 def extract_hashtags_from_media(media_list: list[dict]) -> list[str]:
