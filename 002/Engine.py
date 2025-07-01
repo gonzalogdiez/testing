@@ -5,9 +5,9 @@ import streamlit as st
 import mysql.connector
 from mysql.connector import Error
 
-# ─── Conexión a MySQL ────────────────────────────────────────────────────────
+# ─── MySQL Connection ─────────────────────────────────────────────────────────
 def get_mysql_connection():
-    # 1) intento primero leer desde secrets.toml
+    # Try reading from Streamlit secrets.toml first
     cfg = st.secrets.get("mysql", {})
 
     host     = cfg.get("host")     or os.getenv("MYSQL_HOST", os.getenv("DB_HOST", "db"))
@@ -25,98 +25,110 @@ def get_mysql_connection():
             database = database
         )
     except Error as e:
-        st.error(f"Error conectando a MySQL: {e}")
+        st.error(f"Error connecting to MySQL: {e}")
         return None
 
-
-# ─── Carga de hashtags con frecuencia ───────────────────────────────────────
-def load_hashtag_frequencies():
+# ─── Load hashtags with frequency (top N) ────────────────────────────────────
+def load_hashtag_frequencies(limit: int = 10):
     """
-    Devuelve una lista de dicts: {id, hashtag, freq}
-    donde freq es la cantidad de veces
-    ese hashtag aparece en instagram_user_hashtags.
+    Returns a list of dicts: {id, hashtag, freq}
+    Top {limit} hashtags by frequency.
     """
     conn = get_mysql_connection()
     if not conn:
         return []
+
     try:
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT 
-              h.id,
-              h.hashtag,
-              COUNT(uh.user_id) AS freq
+        cursor.execute(f"""
+            SELECT
+                h.id,
+                h.hashtag,
+                COUNT(uh.user_id) AS freq
             FROM instagram_hashtags AS h
             LEFT JOIN instagram_user_hashtags AS uh
-              ON h.id = uh.hashtag_id
+                ON h.id = uh.hashtag_id
             GROUP BY h.id, h.hashtag
             ORDER BY freq DESC
-        """)
+            LIMIT %s
+        """, (limit,))
         return cursor.fetchall()
     except Error as e:
-        st.error(f"Error al consultar hashtags: {e}")
+        st.error(f"Error querying hashtags: {e}")
         return []
     finally:
         cursor.close()
         conn.close()
 
-# ─── Carga de usuarios para los hashtags seleccionados ──────────────────────
-def load_users_for_hashtags(hashtag_ids: list[int]):
+# ─── Load users for selected hashtags (up to limit) ─────────────────────────
+def load_users_for_hashtags(hashtag_ids: list[int], limit: int = 50):
     """
-    Recibe una lista de hashtag_id y devuelve
-    una lista de dicts: {user_id, username}
-    con los usuarios que mencionaron alguno de esos hashtags.
+    Given a list of hashtag_id, returns
+    a list of dicts: {user_id, username}
+    of users who used any of those hashtags.
     """
     if not hashtag_ids:
         return []
+
     conn = get_mysql_connection()
     if not conn:
         return []
+
     try:
         cursor = conn.cursor(dictionary=True)
         placeholders = ",".join(["%s"] * len(hashtag_ids))
         sql = f"""
             SELECT DISTINCT
-              u.id    AS user_id,
-              u.username
+                u.id       AS user_id,
+                u.username
             FROM instagram_users AS u
             JOIN instagram_user_hashtags AS uh
-              ON u.id = uh.user_id
+                ON u.id = uh.user_id
             WHERE uh.hashtag_id IN ({placeholders})
+            LIMIT %s
         """
-        cursor.execute(sql, hashtag_ids)
+        params = hashtag_ids + [limit]
+        cursor.execute(sql, params)
         return cursor.fetchall()
     except Error as e:
-        st.error(f"Error al consultar usuarios: {e}")
+        st.error(f"Error querying users: {e}")
         return []
     finally:
         cursor.close()
         conn.close()
 
-# ─── Interfaz Streamlit ────────────────────────────────────────────────────
-st.title("De Hashtags a Usuarios en Instagram")
+# ─── Streamlit App UI ────────────────────────────────────────────────────────
+st.title("From Hashtags to Instagram Users")
 
-# Paso 1: mostrar lista de hashtags con frecuencia
-st.header("Paso 1: Selecciona hashtags")
-hashtags = load_hashtag_frequencies()
+# Sidebar controls for limits
+top_n = st.sidebar.number_input(
+    "Number of hashtags to load", min_value=1, max_value=100, value=10, step=1
+)
+user_limit = st.sidebar.number_input(
+    "Maximum users to display", min_value=1, max_value=500, value=50, step=10
+)
+
+# Step 1: Display hashtag list
+st.header("Step 1: Select Hashtags")
+hashtags = load_hashtag_frequencies(limit=top_n)
 
 if not hashtags:
-    st.warning("No se pudieron cargar los hashtags.")
+    st.warning("Unable to load hashtags.")
     st.stop()
 
 selected_tags = st.multiselect(
-    "Elige uno o más hashtags:",
+    "Select one or more hashtags:",
     options=hashtags,
     format_func=lambda x: f"{x['hashtag']} ({x['freq']})"
 )
 
-# Botón para disparar la carga de usuarios
-if st.button("Obtener usuarios"):
+# Step 2: Fetch users when button clicked
+if st.button("Get Users"):
     hashtag_ids = [h['id'] for h in selected_tags]
-    users = load_users_for_hashtags(hashtag_ids)
+    users = load_users_for_hashtags(hashtag_ids, limit=user_limit)
 
     if users:
-        st.header("Usuarios que usaron esos hashtags")
+        st.header("Users Who Used Those Hashtags")
         st.table(users)
     else:
-        st.info("No se encontraron usuarios para los hashtags seleccionados.")
+        st.info("No users found for the selected hashtags.")
