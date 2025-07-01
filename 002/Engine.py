@@ -1,161 +1,112 @@
 # streamlit_app.py
 
+import os
 import streamlit as st
-import requests
-import re
-import json
-from collections import Counter
-from openai import OpenAI
+import mysql.connector
+from mysql.connector import Error
 
-# ─── Configuration & Secrets ────────────────────────────────────────────────
-# ~/.streamlit/secrets.toml:
-# [secrets]
-# OPENAI_API_KEY = "sk-..."
-# APIFY_BASE_URL   = "http://167.99.6.240:8002"
-client         = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-APIFY_BASE_URL = st.secrets["APIFY_BASE_URL"]
+# ─── Conexión a MySQL ────────────────────────────────────────────────────────
+def get_mysql_connection():
+    try:
+        return mysql.connector.connect(
+            host     = os.getenv("MYSQL_HOST", os.getenv("DB_HOST", "db")),
+            port     = int(os.getenv("MYSQL_PORT", 3306)),
+            user     = os.getenv("MYSQL_USER", os.getenv("DB_USER")),
+            password = os.getenv("MYSQL_PASSWORD", os.getenv("DB_PASS")),
+            database = os.getenv("MYSQL_DATABASE", "instagram_db")
+        )
+    except Error as e:
+        st.error(f"Error conectando a MySQL: {e}")
+        return None
 
-# Sidebar settings
-st.sidebar.header("Settings")
-RESULTS_LIMIT = st.sidebar.slider(
-    "Top media per hashtag",
-    min_value=5, max_value=50, value=20,
-    key="settings_results_limit"
+# ─── Carga de hashtags con frecuencia ───────────────────────────────────────
+def load_hashtag_frequencies():
+    """
+    Devuelve una lista de dicts: {id, hashtag, freq}
+    donde freq es la cantidad de veces
+    ese hashtag aparece en instagram_user_hashtags.
+    """
+    conn = get_mysql_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT 
+              h.id,
+              h.hashtag,
+              COUNT(uh.user_id) AS freq
+            FROM instagram_hashtags AS h
+            LEFT JOIN instagram_user_hashtags AS uh
+              ON h.id = uh.hashtag_id
+            GROUP BY h.id, h.hashtag
+            ORDER BY freq DESC
+        """)
+        return cursor.fetchall()
+    except Error as e:
+        st.error(f"Error al consultar hashtags: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+# ─── Carga de usuarios para los hashtags seleccionados ──────────────────────
+def load_users_for_hashtags(hashtag_ids: list[int]):
+    """
+    Recibe una lista de hashtag_id y devuelve
+    una lista de dicts: {user_id, username}
+    con los usuarios que mencionaron alguno de esos hashtags.
+    """
+    if not hashtag_ids:
+        return []
+    conn = get_mysql_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor(dictionary=True)
+        placeholders = ",".join(["%s"] * len(hashtag_ids))
+        sql = f"""
+            SELECT DISTINCT
+              u.id    AS user_id,
+              u.username
+            FROM instagram_users AS u
+            JOIN instagram_user_hashtags AS uh
+              ON u.id = uh.user_id
+            WHERE uh.hashtag_id IN ({placeholders})
+        """
+        cursor.execute(sql, hashtag_ids)
+        return cursor.fetchall()
+    except Error as e:
+        st.error(f"Error al consultar usuarios: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+# ─── Interfaz Streamlit ────────────────────────────────────────────────────
+st.title("De Hashtags a Usuarios en Instagram")
+
+# Paso 1: mostrar lista de hashtags con frecuencia
+st.header("Paso 1: Selecciona hashtags")
+hashtags = load_hashtag_frequencies()
+
+if not hashtags:
+    st.warning("No se pudieron cargar los hashtags.")
+    st.stop()
+
+selected_tags = st.multiselect(
+    "Elige uno o más hashtags:",
+    options=hashtags,
+    format_func=lambda x: f"{x['hashtag']} ({x['freq']})"
 )
 
-HASHTAG_RE = re.compile(r"#(\w+)")
+# Botón para disparar la carga de usuarios
+if st.button("Obtener usuarios"):
+    hashtag_ids = [h['id'] for h in selected_tags]
+    users = load_users_for_hashtags(hashtag_ids)
 
-def generate_initial_hashtags(topic: str, brand: str, market: str) -> list[str]:
-    prompt = (
-        f"Generate 8–10 hashtags for a brand about “{brand}”, "
-        f"interested in “{topic}” and targeting the “{market}” market. "
-        "Return them only as a JSON array of strings—no extra text or fences."
-    )
-    for model in ("gpt-4o-mini", "gpt-3.5-turbo"):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role":"user","content":prompt}],
-                temperature=0.7,
-                max_tokens=150
-            )
-            raw = resp.choices[0].message.content
-            start, end = raw.find("["), raw.rfind("]")
-            if start == -1 or end == -1:
-                st.error(f"No JSON array found in {model} response.")
-                continue
-            snippet = raw[start:end+1]
-            tags = json.loads(snippet)
-            if isinstance(tags, list):
-                return tags
-            st.error(f"Parsed JSON not a list from {model}:\n{snippet}")
-            return []
-        except json.JSONDecodeError:
-            st.error(f"JSON parse error from {model}:\n{snippet}")
-            return []
-        except Exception as e:
-            st.warning(f"OpenAI error with {model}: {e}")
-    st.error("All OpenAI attempts failed. Check API key & model access.")
-    return []
-
-def fetch_top_media(hashtags: list[str]) -> list[dict]:
-    """
-    Call Apify and flatten the `top_media` arrays inside each result.
-    """
-    url        = f"{APIFY_BASE_URL}/hashtags/top-media"
-    clean_tags = [h.lstrip("#").lower() for h in hashtags]
-    clean_tags = [h.replace("#", "").lower() for h in hashtags]
-    payload    = {"hashtags": clean_tags, "results_limit": RESULTS_LIMIT}
-    headers    = {"accept": "application/json"}
-
-    st.write(f"▶️ POST {url} payload={payload}")
-    r = requests.post(url, json=payload, headers=headers, timeout=30)
-    st.write(f"⏪ Status code: {r.status_code}")
-    raw = r.text or ""
-    st.write("⏪ Raw response:", raw[:500] + ("..." if len(raw)>500 else ""))
-
-    data = {}
-    try:
-        data = r.json()
-    except Exception as e:
-        st.error(f"JSON decode error: {e}")
-        return []
-
-    st.write("⏪ Parsed top‐level keys:", list(data.keys()))
-
-    media_items = []
-    if "media" in data:
-        media_items = data["media"]
-    elif "results" in data:
-        for entry in data["results"]:
-            # this will give you an empty list if top_media is None or missing
-            items = entry.get("top_media") or []
-            media_items += items
-    elif "items" in data:
-        media_items = data["items"]
-    st.write(f"▶️ Returning {len(media_items)} media items")
-    return media_items
-
-
-def extract_hashtags_from_media(media_list: list[dict]) -> list[str]:
-    out = []
-    for item in media_list:
-        caption = item.get("caption", "") or ""
-        out.extend(f"#{h}" for h in HASHTAG_RE.findall(caption))
-    return out
-
-def enrich_hashtags(seeds: list[str]) -> list[str]:
-    media  = fetch_top_media(seeds)
-    raw    = extract_hashtags_from_media(media)
-    counts = Counter(raw)
-    seedset = {s.lstrip("#").lower() for s in seeds}
-    for tag in list(counts):
-        if tag.lstrip("#").lower() in seedset:
-            counts.pop(tag, None)
-    return [tag for tag,_ in counts.most_common(20)]
-
-# ─── Streamlit UI ────────────────────────────────────────────────────────────
-
-st.title("Hashtag Mapping Prototype")
-
-# Step 1
-st.header("Step 1: Define Your Campaign")
-topic  = st.text_input("Topic", key="ui_topic")
-brand  = st.text_input("Brand", key="ui_brand")
-market = st.text_input("Market", key="ui_market")
-
-if st.button("Generate Initial Hashtags", key="btn_generate"):
-    if topic and brand and market:
-        st.session_state.initial = generate_initial_hashtags(topic, brand, market)
+    if users:
+        st.header("Usuarios que usaron esos hashtags")
+        st.table(users)
     else:
-        st.warning("Please fill in Topic, Brand, and Market.")
-
-# Step 2
-if "initial" in st.session_state:
-    st.header("Step 2: Confirm Seed Hashtags")
-    selected_initial = st.multiselect(
-        "Select hashtags to keep",
-        options=st.session_state.initial,
-        default=st.session_state.initial,
-        key="ui_select_initial"
-    )
-    if st.button("Enrich Hashtags", key="btn_enrich"):
-        st.write("🔍 Enriching seeds:", selected_initial)
-        st.session_state.enriched = enrich_hashtags(selected_initial)
-
-# Step 3
-if "enriched" in st.session_state:
-    st.header("Step 3: Select Final Hashtags")
-    selected_final = st.multiselect(
-        "Pick your final hashtags",
-        options=st.session_state.enriched,
-        default=st.session_state.enriched,
-        key="ui_select_final"
-    )
-    if st.button("Finalize", key="btn_finalize"):
-        st.session_state.final = selected_final
-
-# Output
-if "final" in st.session_state:
-    st.header("Final Hashtags")
-    st.write(st.session_state.final)
+        st.info("No se encontraron usuarios para los hashtags seleccionados.")
