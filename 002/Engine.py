@@ -7,17 +7,27 @@ from mysql.connector import Error
 
 # ─── Conexión a MySQL ────────────────────────────────────────────────────────
 def get_mysql_connection():
+    # 1) intento primero leer desde secrets.toml
+    cfg = st.secrets.get("mysql", {})
+
+    host     = cfg.get("host")     or os.getenv("MYSQL_HOST", os.getenv("DB_HOST", "db"))
+    port     = cfg.get("port")     or int(os.getenv("MYSQL_PORT", 3306))
+    user     = cfg.get("user")     or os.getenv("MYSQL_USER", os.getenv("DB_USER"))
+    password = cfg.get("password") or os.getenv("MYSQL_PASSWORD", os.getenv("DB_PASS"))
+    database = cfg.get("database") or os.getenv("MYSQL_DATABASE", "instagram_db")
+
     try:
         return mysql.connector.connect(
-            host     = os.getenv("MYSQL_HOST", os.getenv("DB_HOST", "db")),
-            port     = int(os.getenv("MYSQL_PORT", 3306)),
-            user     = os.getenv("MYSQL_USER", os.getenv("DB_USER")),
-            password = os.getenv("MYSQL_PASSWORD", os.getenv("DB_PASS")),
-            database = os.getenv("MYSQL_DATABASE", "instagram_db")
+            host     = host,
+            port     = port,
+            user     = user,
+            password = password,
+            database = database
         )
     except Error as e:
         st.error(f"Error conectando a MySQL: {e}")
         return None
+
 
 # ─── Carga de hashtags con frecuencia ───────────────────────────────────────
 def load_hashtag_frequencies():
